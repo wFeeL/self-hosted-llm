@@ -1,0 +1,38 @@
+import pytest
+from conftest import Serve
+from pydantic import ValidationError
+
+from error_classifier.api.app import create_app
+from error_classifier.config import Settings
+from error_classifier.errors import LlmUnavailableError
+
+pytestmark = pytest.mark.anyio
+
+
+def _settings() -> Settings:
+    return Settings(llm_model="m", llm_base_url="http://127.0.0.1:9/v1")
+
+
+async def test_health_ok_without_runtime(serve: Serve) -> None:
+    async with serve(create_app(_settings())) as client:
+        response = await client.get("/health")
+    assert response.status_code == 200
+    assert response.json() == {"status": "ok"}
+
+
+async def test_service_error_envelope(serve: Serve) -> None:
+    app = create_app(_settings())
+
+    async def boom() -> None:
+        raise LlmUnavailableError("down")
+
+    app.add_api_route("/boom", boom)
+    async with serve(app) as client:
+        response = await client.get("/boom")
+    assert response.status_code == 503
+    assert response.json() == {"error": {"code": "llm_unavailable", "message": "down"}}
+
+
+def test_create_app_fails_on_bad_env() -> None:
+    with pytest.raises(ValidationError, match="llm_model"):
+        create_app()
