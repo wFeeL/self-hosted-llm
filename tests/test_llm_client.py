@@ -88,3 +88,28 @@ async def test_alias_missing(respx_mock: respx.MockRouter, llm: LlmClient) -> No
     with pytest.raises(LlmUnavailableError) as info:
         await llm.check_ready()
     assert info.value.message == NOT_SERVED
+
+
+async def test_probe_request_carries_finite_timeouts(
+    respx_mock: respx.MockRouter, llm: LlmClient
+) -> None:
+    route = respx_mock.get(URL).respond(200, json={"data": [{"id": "m"}]})
+    await llm.check_ready()
+    timeout = route.calls.last.request.extensions["timeout"]
+    assert timeout == {"connect": 2.0, "read": 2.0, "write": 2.0, "pool": 2.0}
+
+
+async def test_default_client_timeout_is_finite(respx_mock: respx.MockRouter) -> None:
+    route = respx_mock.get(URL).respond(200, json={})
+    settings = Settings(llm_model="m", llm_base_url="http://llm.test/v1")
+    async with build_http_client(settings) as http:
+        await http.get("models")
+    timeout = route.calls.last.request.extensions["timeout"]
+    assert timeout == {"connect": 2.0, "read": 2.0, "write": 2.0, "pool": 2.0}
+
+
+async def test_other_request_error(respx_mock: respx.MockRouter, llm: LlmClient) -> None:
+    respx_mock.get(URL).mock(side_effect=httpx.DecodingError("x"))
+    with pytest.raises(LlmUnavailableError) as info:
+        await llm.check_ready()
+    assert info.value.message == "LLM runtime request failed"
