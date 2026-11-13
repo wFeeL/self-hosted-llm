@@ -23,9 +23,12 @@ services:
       interval: 10s
       timeout: 5s
       retries: 3
-      start_period: 600s
+      start_period: ${LLM_START_PERIOD:-600s}
     cpus: ${LLM_CPUS:-6}
     mem_limit: ${LLM_MEM_LIMIT:-6g}
+    memswap_limit: ${LLM_MEM_LIMIT:-6g}
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: [ALL]
     restart: unless-stopped
 
   api:
@@ -49,6 +52,9 @@ services:
       start_period: 10s
     cpus: ${API_CPUS:-1}
     mem_limit: ${API_MEM_LIMIT:-512m}
+    memswap_limit: ${API_MEM_LIMIT:-512m}
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: [ALL]
     restart: unless-stopped
 
 volumes:
