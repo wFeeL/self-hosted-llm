@@ -20,6 +20,12 @@ def clean_env(monkeypatch: pytest.MonkeyPatch) -> None:
         "LLM_MODEL",
         "LLM_PROBE_TIMEOUT_S",
         "LOG_LEVEL",
+        "REQUEST_TIMEOUT_S",
+        "MAX_INPUT_CHARS",
+        "MAX_REQUEST_BYTES",
+        "MAX_OUTPUT_TOKENS",
+        "LLM_TEMPERATURE",
+        "LLM_DISABLE_THINKING",
         "API_URL",
         "MODEL_ALIAS",
     ):
