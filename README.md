@@ -33,7 +33,7 @@ Response from the stack described above:
 
 - An answer takes several seconds on CPU: this one took 6.8 s, and long inputs take up to about a minute.
 - `summary` and `suggested_action` are always in English, even for an error text in another language. The example in the task statement is in Russian; this is a deliberate difference.
-- The service talks to the model only through the OpenAI-compatible API of llama-server (`/v1/chat/completions`), so the runtime can be replaced without changing the API code.
+- The service talks to the model only through the OpenAI-compatible API of llama-server (`/v1/chat/completions`). The mapping of runtime errors (context overflow, loading state) and the thinking switch are specific to llama-server.
 - Categories, severity levels and error codes are listed in [docs/architecture.md](docs/architecture.md).
 
 Decisions and module layout are in [docs/architecture.md](docs/architecture.md). The full README comes later.

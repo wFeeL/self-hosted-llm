@@ -91,4 +91,6 @@ def test_base64_input_at_the_limit() -> None:
     message = base64.b64encode(random.Random(7).randbytes(2400)).decode()[:3000]
     response = _classify("base64", message)
     assert response.status_code == 200
-    _check_ascii(response.json())
+    body = response.json()
+    assert body["category"] == "unknown"
+    _check_ascii(body)

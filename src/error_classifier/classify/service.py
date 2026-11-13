@@ -14,7 +14,7 @@ from error_classifier.classify.prompt import (
 )
 from error_classifier.classify.schema import SCHEMA_NAME, ClassificationResult, response_schema
 from error_classifier.config import Settings
-from error_classifier.errors import LlmBadResponseError, ModelOutputInvalidError
+from error_classifier.errors import InvalidInputError, LlmBadResponseError, ModelOutputInvalidError
 from error_classifier.llm.client import ChatCompletion, ChatMessage
 
 logger = logging.getLogger(__name__)
@@ -122,6 +122,12 @@ class Classifier:
             stats.completion_tokens = _add(stats.completion_tokens, completion.completion_tokens)
 
             if completion.finish_reason == "length":
+                tokens = completion.completion_tokens
+                if tokens is not None and tokens < self._options.max_output_tokens:
+                    # Stopped before max_tokens, so the context slot ran out, not the answer budget.
+                    raise InvalidInputError(
+                        "The error text is too long for the model context, shorten it"
+                    )
                 logger.debug("attempt %d was cut off at the token limit", stats.attempts)
                 messages = [*base, {"role": "user", "content": CUT_OFF_CORRECTION}]
                 continue

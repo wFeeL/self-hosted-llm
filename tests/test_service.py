@@ -194,12 +194,31 @@ async def test_retry_after_invalid(first: ChatCompletion, reason: str, echoes_an
 
 
 async def test_retry_after_length() -> None:
-    fake = FakeChat(_ok('{"category":"netw', finish_reason="length"), _ok())
+    cut = _ok('{"category":"netw', finish_reason="length", completion_tokens=100)
+    fake = FakeChat(cut, _ok())
     result = await _classifier(fake).classify("boom", ClassifyStats())
 
     base = build_messages("boom")
     assert fake.messages == [base, [*base, {"role": "user", "content": CUT_OFF_CORRECTION}]]
     assert result.result.severity is Severity.HIGH
+
+
+async def test_retry_after_length_without_token_count() -> None:
+    cut = _ok('{"category":"netw', finish_reason="length", completion_tokens=None)
+    fake = FakeChat(cut, _ok())
+    await _classifier(fake).classify("boom", ClassifyStats())
+    assert len(fake.messages) == 2
+
+
+async def test_length_below_token_limit_means_input_too_long() -> None:
+    # The slot ran out before max_tokens did, so the prompt was too long for the context.
+    fake = FakeChat(_ok('{"cat', finish_reason="length", completion_tokens=99), _ok())
+    stats = ClassifyStats()
+    with pytest.raises(InvalidInputError) as info:
+        await _classifier(fake).classify("boom", stats)
+    assert info.value.message == "The error text is too long for the model context, shorten it"
+    assert len(fake.messages) == 1
+    assert stats.attempts == 1
 
 
 async def test_two_invalid_answers() -> None:
@@ -211,7 +230,8 @@ async def test_two_invalid_answers() -> None:
 
 
 async def test_two_cut_off_answers() -> None:
-    fake = FakeChat(_ok("{", finish_reason="length"), _ok("{", finish_reason="length"))
+    cut = _ok("{", finish_reason="length", completion_tokens=100)
+    fake = FakeChat(cut, cut)
     with pytest.raises(ModelOutputInvalidError):
         await _classifier(fake).classify("boom", ClassifyStats())
     assert len(fake.messages) == 2
