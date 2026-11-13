@@ -1,0 +1,55 @@
+name: llm-error-classifier
+
+services:
+  llm:
+    image: ghcr.io/ggml-org/llama.cpp:server-b12352@sha256:998e17af1ae710081e5a6e6db962f29dd81db31b33eccf281f1767ff0f7729c7
+    environment:
+      LLAMA_ARG_HF_REPO: ${LLAMA_ARG_HF_REPO:?LLAMA_ARG_HF_REPO is not set, copy .env.example to .env}
+      LLAMA_ARG_HF_FILE: ${LLAMA_ARG_HF_FILE:?LLAMA_ARG_HF_FILE is not set, copy .env.example to .env}
+      LLAMA_ARG_ALIAS: ${MODEL_ALIAS:?MODEL_ALIAS is not set, copy .env.example to .env}
+      LLAMA_CACHE: /models
+      LLAMA_ARG_HOST: 0.0.0.0
+      LLAMA_ARG_PORT: "8080"
+      LLAMA_ARG_CTX_SIZE: ${LLAMA_ARG_CTX_SIZE:-8192}
+      LLAMA_ARG_N_PARALLEL: ${LLAMA_ARG_N_PARALLEL:-2}
+      LLAMA_ARG_THREADS: ${LLAMA_ARG_THREADS:-6}
+      LLAMA_ARG_MMPROJ_AUTO: ${LLAMA_ARG_MMPROJ_AUTO:-off}
+      LLAMA_ARG_ENDPOINT_METRICS: ${LLAMA_ARG_ENDPOINT_METRICS:-1}
+      LLAMA_ARG_OFFLINE: ${LLAMA_ARG_OFFLINE:-0}
+    volumes:
+      - models:/models
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 600s
+    cpus: ${LLM_CPUS:-6}
+    mem_limit: ${LLM_MEM_LIMIT:-6g}
+    restart: unless-stopped
+
+  api:
+    build: .
+    image: llm-error-classifier-api:local
+    environment:
+      LLM_BASE_URL: http://llm:8080/v1
+      LLM_MODEL: ${MODEL_ALIAS:?MODEL_ALIAS is not set, copy .env.example to .env}
+      LLM_PROBE_TIMEOUT_S: ${LLM_PROBE_TIMEOUT_S:-2.0}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    ports:
+      - "${API_BIND:-127.0.0.1}:${API_PORT:-8000}:8000"
+    depends_on:
+      llm:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=2)"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 10s
+    cpus: ${API_CPUS:-1}
+    mem_limit: ${API_MEM_LIMIT:-512m}
+    restart: unless-stopped
+
+volumes:
+  models:
