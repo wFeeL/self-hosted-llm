@@ -6,6 +6,7 @@ import pytest
 
 from error_classifier.classify.prompt import (
     CUT_OFF_CORRECTION,
+    INPUT_PREFIX,
     build_messages,
     correction_for,
     normalize_input,
@@ -254,7 +255,7 @@ async def test_truncated_input_flag() -> None:
     assert stats.input_chars == 5000
     last = fake.messages[0][-1]["content"]
     assert "characters omitted" in last
-    assert len(last) <= 3000 + len("<error_text>\n\n</error_text>")
+    assert len(json.loads(last.removeprefix(INPUT_PREFIX))) <= 3000
     assert last == build_messages(normalize_input("a" * 5000, 3000).text)[-1]["content"]
 
 
