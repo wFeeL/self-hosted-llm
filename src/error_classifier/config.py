@@ -1,6 +1,6 @@
-from typing import Literal
+from typing import Literal, Self
 
-from pydantic import Field, field_validator
+from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -12,6 +12,12 @@ class Settings(BaseSettings):
     llm_model: str = Field(min_length=1)
     llm_probe_timeout_s: float = Field(default=2.0, gt=0)
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR"] = "INFO"
+    request_timeout_s: float = Field(default=120.0, gt=0)
+    max_input_chars: int = Field(default=3000, ge=200, le=4000)
+    max_request_bytes: int = 262144
+    max_output_tokens: int = Field(default=256, ge=16, le=2048)
+    llm_temperature: float = Field(default=0.0, ge=0, le=2)
+    llm_disable_thinking: bool = False
 
     @field_validator("llm_base_url", mode="after")
     @classmethod
@@ -20,6 +26,13 @@ class Settings(BaseSettings):
         if not stripped:
             raise ValueError("must not be empty")
         return stripped
+
+    @model_validator(mode="after")
+    def _body_limit_covers_input(self) -> Self:
+        # 4 bytes per character is the UTF-8 worst case, plus room for the JSON wrapper.
+        if self.max_request_bytes < 4 * self.max_input_chars:
+            raise ValueError("max_request_bytes must be at least 4 * max_input_chars")
+        return self
 
 
 def load_settings() -> Settings:
