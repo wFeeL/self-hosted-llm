@@ -9,6 +9,7 @@ import respx
 from conftest import Serve
 
 from error_classifier.api.app import create_app
+from error_classifier.classify.prompt import INPUT_PREFIX
 from error_classifier.classify.service import Classifier, ClassifyStats
 from error_classifier.config import Settings
 
@@ -199,7 +200,8 @@ async def test_long_message_truncated(respx_mock: respx.MockRouter, serve: Serve
     sent = json.loads(route.calls.last.request.content)
     last = sent["messages"][-1]["content"]
     assert "characters omitted" in last
-    assert len(last) <= 3000 + 27
+    assert last.startswith(INPUT_PREFIX)
+    assert len(json.loads(last.removeprefix(INPUT_PREFIX))) <= 3000
 
 
 async def test_settings_reach_runtime(respx_mock: respx.MockRouter, serve: Serve) -> None:
