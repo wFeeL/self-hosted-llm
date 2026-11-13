@@ -11,6 +11,7 @@ until curl -fsS http://127.0.0.1:8000/ready; do sleep 5; done
 ```
 
 - The first start downloads about 2.1 GB of model weights into the `models` volume; watch it with `docker compose logs -f llm`.
+- If the loop keeps waiting, check `docker compose ps` and `docker compose logs llm`; an unhealthy `llm` keeps `api` from starting.
 - Every `docker compose` command needs `.env` to be present.
 - If the network is slow and `llm` becomes unhealthy before the download ends, run `docker compose up -d` again after the download, or raise `LLM_START_PERIOD` in `.env`.
 - `/ready` answers 503 until the runtime has loaded the model, `/health` always answers 200.
