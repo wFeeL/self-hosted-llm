@@ -1,9 +1,14 @@
-from typing import cast
+from typing import Literal, TypedDict, cast
 
 import httpx
 
 from error_classifier.config import Settings
 from error_classifier.errors import LlmUnavailableError
+
+
+class ChatMessage(TypedDict):
+    role: Literal["system", "user", "assistant"]
+    content: str
 
 
 def build_http_client(settings: Settings) -> httpx.AsyncClient:
