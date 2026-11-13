@@ -1,3 +1,5 @@
+import logging
+
 import pytest
 from conftest import Serve
 from pydantic import ValidationError
@@ -36,3 +38,11 @@ async def test_service_error_envelope(serve: Serve) -> None:
 def test_create_app_fails_on_bad_env() -> None:
     with pytest.raises(ValidationError, match="llm_model"):
         create_app()
+
+
+def test_create_app_sets_uvicorn_logger_levels(monkeypatch: pytest.MonkeyPatch) -> None:
+    names = ("uvicorn", "uvicorn.error", "uvicorn.access")
+    for name in names:
+        monkeypatch.setattr(logging.getLogger(name), "level", logging.INFO)
+    create_app(Settings(llm_model="m", log_level="ERROR"))
+    assert [logging.getLogger(name).level for name in names] == [logging.ERROR] * 3

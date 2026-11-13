@@ -7,8 +7,11 @@ from error_classifier.errors import LlmUnavailableError
 
 
 def build_http_client(settings: Settings) -> httpx.AsyncClient:
-    # No default timeout: every call sets its own (probe here, generation in F1).
-    return httpx.AsyncClient(base_url=settings.llm_base_url + "/", timeout=None)
+    # Finite default so no call can hang; calls with their own needs override it per request.
+    return httpx.AsyncClient(
+        base_url=settings.llm_base_url + "/",
+        timeout=httpx.Timeout(settings.llm_probe_timeout_s),
+    )
 
 
 class LlmClient:
@@ -26,6 +29,8 @@ class LlmClient:
             ) from exc
         except httpx.TransportError as exc:
             raise LlmUnavailableError("LLM runtime is unreachable") from exc
+        except httpx.RequestError as exc:
+            raise LlmUnavailableError("LLM runtime request failed") from exc
         if response.status_code == 503:
             raise LlmUnavailableError("LLM runtime is still loading the model")
         if response.status_code != 200:

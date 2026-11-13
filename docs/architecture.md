@@ -32,7 +32,7 @@ client --> api :8000 --> llm :8080
 | 4 | (planned) One retry on an invalid model answer, with the error text, then 502 `model_output_invalid` | A placeholder `unknown`, unlimited retries | The second request doubles latency in the rare case |
 | 5 | (planned) A semaphore in the API equal to the number of runtime slots; a request waits at most `QUEUE_TIMEOUT_S`, then gets 429 with `Retry-After` | Relying on the llama-server queue | The llama-server queue has no limit and no deadline and never returns 429 ([server-queue.cpp](https://github.com/ggml-org/llama.cpp/blob/master/tools/server/server-queue.cpp)) |
 | 6 | (planned) A timeout `REQUEST_TIMEOUT_S` on every runtime call, then 504 and cancellation of the HTTP call | No timeout | That the runtime stops generating after a cancelled call is assumed and still has to be checked |
-| 7 | The model is set in `.env`: repository and GGUF file for `llm`, one alias for both services | Model in code or in the image | Changing the model means editing `.env` and restarting with `docker compose up -d llm` |
+| 7 | The model is set in `.env`: repository and GGUF file for `llm`, one alias for both services | Model in code or in the image | Changing the model means editing `.env` and running `docker compose up -d`; both services are recreated because they share the alias |
 | 8 | (planned) Answers are in English | Russian, as in the example of the task statement | The difference from the example is explained in the README |
 | 9 | (planned) Quality and model comparison come from one script over a labelled set, which also reports latency | Checking a few examples by hand | The set is written and labelled by hand |
 | 10 | (planned) Benchmarks follow a fixed protocol and the raw results are stored in the repository next to the table | Rough numbers | CPU time for the runs, and the machine is shared with another project |
@@ -50,6 +50,12 @@ client --> api :8000 --> llm :8080
 | 22 | Async tests use the pytest plugin of anyio, which FastAPI and httpx already depend on | pytest-asyncio | The marker is `anyio` instead of `asyncio` |
 | 23 | `.gitignore` is the first commit on `main` (`.env`, `.venv/`, `__pycache__/`, `*.gguf`, tool caches) | A branch from an empty `main` | One housekeeping commit |
 | 24 | HTTP tests of the app use `httpx.AsyncClient` with `httpx.ASGITransport` and run the app lifespan by hand | Starlette `TestClient` | Starlette 1.10 types `TestClient` through the `httpx2` package, which would be another dependency, and pyright strict fails without it; the cost is a small helper instead of the standard client |
+
+## Operational notes
+
+- `llm` runs as root inside the container because the llama.cpp image sets no `USER`. This is accepted; the container runs with `no-new-privileges` and all capabilities dropped.
+- Base image digests are bumped by hand: pull the new image, read its digest with `docker image inspect --format '{{index .RepoDigests 0}}' <image>`, then edit the `Dockerfile` or `compose.yaml`.
+- With `LLAMA_ARG_OFFLINE=0` and no network, a restart still loads the model from the `models` volume (checked).
 
 ## Modules
 
