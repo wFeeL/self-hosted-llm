@@ -29,9 +29,9 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def _body_limit_covers_input(self) -> Self:
-        # 4 bytes per character is the UTF-8 worst case, plus room for the JSON wrapper.
-        if self.max_request_bytes < 4 * self.max_input_chars:
-            raise ValueError("max_request_bytes must be at least 4 * max_input_chars")
+        # JSON escapes an emoji as two \uXXXX surrogates, 12 bytes for one character.
+        if self.max_request_bytes < 12 * self.max_input_chars + 64:
+            raise ValueError("max_request_bytes must be at least 12 * max_input_chars + 64")
         return self
 
 

@@ -10,7 +10,8 @@ from conftest import Serve
 
 from error_classifier.api.app import create_app
 from error_classifier.classify.prompt import INPUT_PREFIX
-from error_classifier.classify.service import Classifier, ClassifyStats
+from error_classifier.classify.schema import Category, ClassificationResult, Severity
+from error_classifier.classify.service import Classification, Classifier, ClassifyStats
 from error_classifier.config import Settings
 
 pytestmark = pytest.mark.anyio
@@ -153,7 +154,7 @@ async def test_invalid_input(
 
 
 def _small_body_settings() -> Settings:
-    return _settings(max_input_chars=200, max_request_bytes=800)
+    return _settings(max_input_chars=200, max_request_bytes=2500)
 
 
 @pytest.mark.respx(assert_all_called=False)
@@ -161,11 +162,11 @@ async def test_body_too_large_with_content_length(
     respx_mock: respx.MockRouter, serve: Serve
 ) -> None:
     route = respx_mock.post(URL).mock(return_value=_good())
-    body = b'{"message": "' + b"a" * 1000 + b'"}'
+    body = b'{"message": "' + b"a" * 3000 + b'"}'
     async with serve(create_app(_small_body_settings())) as client:
         response = await client.post("/classify", content=body)
     assert response.status_code == 400
-    assert response.json() == _error_body("invalid_input", "Request body is larger than 800 bytes")
+    assert response.json() == _error_body("invalid_input", "Request body is larger than 2500 bytes")
     assert route.call_count == 0
 
 
@@ -175,7 +176,7 @@ async def test_body_too_large_streamed(respx_mock: respx.MockRouter, serve: Serv
 
     async def chunks() -> AsyncGenerator[bytes]:
         yield b'{"message": "'
-        for _ in range(10):
+        for _ in range(30):
             yield b"a" * 100
         yield b'"}'
 
@@ -187,7 +188,7 @@ async def test_body_too_large_streamed(respx_mock: respx.MockRouter, serve: Serv
         await stream.aclose()
     assert "content-length" not in response.request.headers
     assert response.status_code == 400
-    assert response.json() == _error_body("invalid_input", "Request body is larger than 800 bytes")
+    assert response.json() == _error_body("invalid_input", "Request body is larger than 2500 bytes")
     assert route.call_count == 0
 
 
@@ -351,3 +352,29 @@ async def test_fallback_exception_handler() -> None:
         response = await client.get("/boom")
     assert response.status_code == 500
     assert response.json() == _error_body("internal_error", "Internal error")
+
+
+async def test_log_latency_is_the_route_time_for_success(
+    serve: Serve, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    caplog.set_level(logging.INFO, logger="error_classifier")
+
+    async def claim_huge_latency(
+        self: Classifier, message: str, stats: ClassifyStats
+    ) -> Classification:
+        result = ClassificationResult(
+            category=Category.UNKNOWN,
+            severity=Severity.LOW,
+            summary="s",
+            suggested_action="a",
+        )
+        return Classification(result, "granite", False, 987654)
+
+    monkeypatch.setattr(Classifier, "classify", claim_huge_latency)
+    async with serve(create_app(_settings())) as client:
+        response = await _post(client, "boom")
+    assert response.json()["latency_ms"] == 987654
+    (record,) = _info_records(caplog)
+    match = re.search(r"latency_ms=(\d+)", record.getMessage())
+    assert match is not None
+    assert int(match.group(1)) < 60_000

@@ -79,14 +79,14 @@ def test_reads_classification_variables(monkeypatch: pytest.MonkeyPatch) -> None
     monkeypatch.setenv("LLM_MODEL", "m")
     monkeypatch.setenv("REQUEST_TIMEOUT_S", "30")
     monkeypatch.setenv("MAX_INPUT_CHARS", "500")
-    monkeypatch.setenv("MAX_REQUEST_BYTES", "2000")
+    monkeypatch.setenv("MAX_REQUEST_BYTES", "7000")
     monkeypatch.setenv("MAX_OUTPUT_TOKENS", "64")
     monkeypatch.setenv("LLM_TEMPERATURE", "0.7")
     monkeypatch.setenv("LLM_DISABLE_THINKING", "true")
     settings = load_settings()
     assert settings.request_timeout_s == 30.0
     assert settings.max_input_chars == 500
-    assert settings.max_request_bytes == 2000
+    assert settings.max_request_bytes == 7000
     assert settings.max_output_tokens == 64
     assert settings.llm_temperature == 0.7
     assert settings.llm_disable_thinking is True
@@ -131,11 +131,17 @@ def test_classification_bounds_accept(
     load_settings()
 
 
-def test_request_bytes_must_cover_four_times_input_chars(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_request_bytes_must_cover_escaped_input(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("LLM_MODEL", "m")
     monkeypatch.setenv("MAX_INPUT_CHARS", "3000")
-    monkeypatch.setenv("MAX_REQUEST_BYTES", "12000")
-    assert load_settings().max_request_bytes == 12000
-    monkeypatch.setenv("MAX_REQUEST_BYTES", "11999")
+    monkeypatch.setenv("MAX_REQUEST_BYTES", "36064")
+    assert load_settings().max_request_bytes == 36064
+    monkeypatch.setenv("MAX_REQUEST_BYTES", "36063")
     with pytest.raises(ValidationError, match="max_request_bytes"):
         load_settings()
+
+
+def test_default_request_bytes_cover_the_largest_input(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("LLM_MODEL", "m")
+    monkeypatch.setenv("MAX_INPUT_CHARS", "4000")
+    assert load_settings().max_request_bytes == 262144

@@ -120,7 +120,7 @@ async def classify(request: Request) -> dict[str, object] | JSONResponse:
             status_code=500,
             content={"error": {"code": "internal_error", "message": "Internal error"}},
         )
-    _log_outcome("ok", result.latency_ms, stats, stats.input_chars)
+    _log_outcome("ok", elapsed_ms(), stats, stats.input_chars)
     return {
         "category": result.result.category.value,
         "severity": result.result.severity.value,
