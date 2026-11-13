@@ -23,6 +23,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     if settings is None:
         settings = load_settings()
     logging.basicConfig(level=settings.log_level)
+    # uvicorn configures its loggers before calling the factory, so set the level again here.
+    for name in ("uvicorn", "uvicorn.error", "uvicorn.access"):
+        logging.getLogger(name).setLevel(settings.log_level)
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
