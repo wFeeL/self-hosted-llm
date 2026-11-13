@@ -1,6 +1,6 @@
 # llm-error-classifier
 
-A service that classifies error messages by category and severity with a small language model that runs locally on CPU. The classification endpoint is not built yet: this version provides the container stack and the health and readiness endpoints.
+A service that classifies error messages by category and severity with a small language model that runs locally on CPU. `POST /classify` takes the text of an error and returns its category, severity, a short summary and a suggested first action.
 
 ## Quick start
 
@@ -18,5 +18,22 @@ until curl -fsS http://127.0.0.1:8000/ready; do sleep 5; done
 - The API has no authentication and listens on `127.0.0.1` by default; on a VPS keep `API_BIND` as is and use a reverse proxy.
 - The stack has been checked with `podman compose`, not with Docker yet.
 - Live tests (`uv run pytest -m live`) take `MODEL_ALIAS` and `API_URL` from the shell environment, not from `.env`.
+
+## Classify an error
+
+```
+curl -sS -X POST http://127.0.0.1:8000/classify -H 'content-type: application/json' -d '{"message": "TypeError: Cannot read properties of undefined (reading '"'"'map'"'"')"}'
+```
+
+Response from the stack described above:
+
+```
+{"category":"runtime_error","severity":"medium","summary":"The code tried to call map on a value that is undefined, causing a TypeError.","suggested_action":"Verify that the variable before map is properly initialized and not null or undefined before calling the method.","model":"granite-4.1-3b-q4km","latency_ms":6780,"truncated":false}
+```
+
+- An answer takes several seconds on CPU: this one took 6.8 s, and long inputs take up to about a minute.
+- `summary` and `suggested_action` are always in English, even for an error text in another language. The example in the task statement is in Russian; this is a deliberate difference.
+- The service talks to the model only through the OpenAI-compatible API of llama-server (`/v1/chat/completions`), so the runtime can be replaced without changing the API code.
+- Categories, severity levels and error codes are listed in [docs/architecture.md](docs/architecture.md).
 
 Decisions and module layout are in [docs/architecture.md](docs/architecture.md). The full README comes later.
