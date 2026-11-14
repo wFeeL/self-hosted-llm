@@ -1,3 +1,4 @@
+import asyncio
 import re
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
@@ -86,9 +87,10 @@ class LlmClient:
         if disable_thinking:
             body["chat_template_kwargs"] = {"enable_thinking": False}
         try:
-            response = await self._http.post("chat/completions", json=body, timeout=timeout_s)
-        except httpx.TimeoutException as exc:
-            raise LlmTimeoutError(f"LLM runtime did not answer within {timeout_s} s") from exc
+            async with asyncio.timeout(timeout_s):
+                response = await self._http.post("chat/completions", json=body, timeout=timeout_s)
+        except (TimeoutError, httpx.TimeoutException) as exc:
+            raise LlmTimeoutError(f"LLM runtime did not answer within {timeout_s:g} s") from exc
         except httpx.TransportError as exc:
             raise LlmUnavailableError("LLM runtime is unreachable") from exc
         except httpx.RequestError as exc:
