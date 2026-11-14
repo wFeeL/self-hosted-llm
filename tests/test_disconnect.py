@@ -1,4 +1,5 @@
 import asyncio
+import gc
 
 import pytest
 from starlette.types import Message
@@ -103,3 +104,35 @@ async def test_caller_cancellation_cancels_both() -> None:
     assert work.cancelled
     assert receive.cancelled
     assert [t for t in asyncio.all_tasks() - before if not t.done()] == []
+
+
+async def test_receive_error_propagates() -> None:
+    async def receive() -> Message:
+        await asyncio.sleep(0)
+        raise RuntimeError("receive broke")
+
+    work = Work()
+    with pytest.raises(RuntimeError, match="receive broke"):
+        await cancel_on_disconnect(receive, work.run())
+    assert work.cancelled
+
+
+async def test_caller_cancellation_retrieves_work_error(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    started = asyncio.Event()
+
+    async def fail_on_cancel() -> None:
+        started.set()
+        try:
+            await asyncio.Event().wait()
+        except asyncio.CancelledError:
+            raise InvalidInputError("cleanup failed") from None
+
+    task = asyncio.create_task(cancel_on_disconnect(FakeReceive(DISCONNECT), fail_on_cancel()))
+    await started.wait()
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    gc.collect()
+    assert [r for r in caplog.records if r.name == "asyncio"] == []
