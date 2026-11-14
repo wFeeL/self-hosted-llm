@@ -6,8 +6,10 @@ from typing import cast
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel, ConfigDict, ValidationError
+from starlette.requests import ClientDisconnect
 
-from error_classifier.classify.service import Classifier, ClassifyStats
+from error_classifier.api.disconnect import ClientDisconnectedError, cancel_on_disconnect
+from error_classifier.classify.service import Classification, Classifier, ClassifyStats
 from error_classifier.concurrency import ConcurrencyLimiter
 from error_classifier.config import Settings
 from error_classifier.errors import InvalidInputError, ServiceError
@@ -124,13 +126,23 @@ async def classify(request: Request) -> dict[str, object] | Response:
         message_chars = len(parsed.message.strip())
         if message_chars == 0:
             raise InvalidInputError("Field 'message' must not be empty")
-        queue_started = time.perf_counter()
-        async with get_limiter(request).slot():
-            queue_ms = round((time.perf_counter() - queue_started) * 1000)
-            result = await get_classifier(request).classify(parsed.message, stats)
+
+        async def work() -> Classification:
+            nonlocal queue_started, queue_ms
+            queue_started = time.perf_counter()
+            async with get_limiter(request).slot():
+                queue_ms = round((time.perf_counter() - queue_started) * 1000)
+                return await get_classifier(request).classify(parsed.message, stats)
+
+        result = await cancel_on_disconnect(request.receive, work())
     except ServiceError as exc:
         _log_outcome(exc.code, elapsed_ms(), stats, stats.input_chars or message_chars, waited_ms())
         raise
+    except ClientDisconnectedError, ClientDisconnect:
+        _log_outcome(
+            "client_closed", elapsed_ms(), stats, stats.input_chars or message_chars, waited_ms()
+        )
+        return Response(status_code=499)
     except Exception as exc:
         # Starlette re-raises after its own 500 handler, so the route answers itself.
         logger.error("classify failed with %s", type(exc).__name__)

@@ -68,6 +68,8 @@ client --> api :8000 --> llm :8080
 | 40 | `Classifier` talks to the runtime through the protocol `ChatClient`. The route writes one INFO record per outcome (`ok` or the error code) from a mutable `ClassifyStats` record that the service fills while it runs, so attempts, tokens and model are logged on errors too. No INFO or higher record holds the user text, the model `content` or `reasoning_content` | Logging inside the service; fields on the exceptions | One more parameter of `classify` |
 | 41 | `llm` stays on the default compose network with outbound access because it downloads the model from Hugging Face on first start. The absence of external AI APIs is shown by the code and the configuration: no AI client in the dependencies, one `httpx.AsyncClient` built in `build_http_client` from `LLM_BASE_URL`, and `compose.yaml` fixes that URL to `http://llm:8080/v1` | `internal: true` for `llm` | The runtime is not isolated from the internet; a weight download is not a call to an AI API |
 | 42 | `LLAMA_ARG_BATCH=512` in compose and `.env.example` | The server default 2048 | A cancelled request frees its slot after at most one batch: about 11 s at 512 instead of about 40 s at 2048 (by code; observed 5.6 s and 38.4 s). The difference in prompt speed is not visible in this measurement and is expected to be almost nil, exact numbers come with the benchmarks |
+| 43 | A client disconnect is caught by waiting for `http.disconnect` from the ASGI `receive` in a second task; the route waits for the first of the work (queue and `classify`) and the watcher with `asyncio.wait(FIRST_COMPLETED)`, and the losing task is cancelled and awaited. If both end together, the work wins. If the route itself is cancelled, both tasks are cancelled and awaited. The outcome is `client_closed` and a 499 that never reaches the client. A disconnect while the body is read (`ClientDisconnect`) has the same outcome | `TaskGroup` or an anyio group (an `ExceptionGroup` would turn a 504 into a 500, and a watcher left alone would hold the answer forever); polling `request.is_disconnected()`; letting the work finish | It relies on the ASGI server sending `http.disconnect` (uvicorn with h11 does, by code; httptools is not checked); behind a reverse proxy a disconnect reaches the app only if the proxy closes its connection to the app (assumed, checked in F5) |
+| 44 | The deadline of a runtime call is held by `asyncio.timeout` in `LlmClient.chat`; the httpx timeout stays as an inner limit | The httpx timeout alone, which counts each operation (connect, write, read, pool) and not the whole call | `asyncio.timeout` cancels the task with the same `CancelledError` as a disconnect, so the connection is closed (by httpcore code) and the runtime stops generating (observed for `task.cancel()`, the same path for the timeout) |
 
 ## Classification
 
@@ -129,6 +131,7 @@ Every error has the shape `{"error": {"code": "...", "message": "..."}}`.
 
 - `llm` runs as root inside the container because the llama.cpp image sets no `USER`. This is accepted; the container runs with `no-new-privileges` and all capabilities dropped.
 - Base image digests are bumped by hand: pull the new image, read its digest with `docker image inspect --format '{{index .RepoDigests 0}}' <image>`, then edit the `Dockerfile` or `compose.yaml`.
+- Behind a reverse proxy a client disconnect reaches the app only if the proxy closes its connection to the app when the client leaves (for nginx, `proxy_ignore_client_abort` must stay off); otherwise the work runs to the end (assumed, checked in F5).
 - With `LLAMA_ARG_OFFLINE=0` and no network, a restart still loads the model from the `models` volume (checked).
 
 ## Modules
@@ -144,6 +147,7 @@ Package `error_classifier`. `Status` shows what exists now.
 | `classify/prompt.py` | System prompt, few-shot examples, message assembly, the input as a JSON string, truncation | present |
 | `classify/service.py` | Pipeline: normalisation, request, validation, retry, latency | present |
 | `concurrency.py` | Semaphore with a bounded queue that waits at most `QUEUE_TIMEOUT_S` | present |
+| `api/disconnect.py` | Waits for `http.disconnect` next to the work and cancels the work when the client goes away | present |
 | `api/app.py`, `api/routes.py` | FastAPI app, error handlers, `/classify`, `/health`, `/ready` | present |
 | `scripts/evaluate.py` | Runs the set, accuracy per field, share of valid answers, p50 and p95, markdown report | planned |
 | `scripts/bench.py` | Benchmark protocol: cold start, series, memory, CPU | planned |
