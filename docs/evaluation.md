@@ -111,6 +111,7 @@ The price is accuracy. Qwen3-4B got both fields right in 10 more rows, and if it
 - The quantizers differ: IBM for Granite, bartowski (imatrix) for both Qwen models.
 - Latency was measured on podman on a shared machine, on short inputs only. A repeat of five rows under background load took up to 2.3 times longer with the same answers. Benchmarks on Docker follow in `docs/benchmarks.md`.
 - Seven secret rows show leaks when they happen; zero leaks on seven rows does not prove a model never leaks.
+- Temperature 0 is not bit-exact here. A repeat run of Qwen3.5-2B on the final code changed the labels of 3 of 60 rows (`py-007`, `infra-009`, `ru-002`) with the same score of 24 rows with both fields right. The cause is assumed to be the prompt cache and batch boundaries of llama-server; differences of a few rows between models are within this as well.
 
 ## Reproducing
 
