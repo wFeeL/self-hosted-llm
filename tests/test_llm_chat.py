@@ -1,4 +1,6 @@
+import asyncio
 import json
+import time
 from collections.abc import AsyncGenerator
 from typing import cast
 
@@ -145,7 +147,7 @@ FAILURES = [
     pytest.param(
         httpx.ReadTimeout("slow"),
         LlmTimeoutError,
-        "LLM runtime did not answer within 7.0 s",
+        "LLM runtime did not answer within 7 s",
         id="timeout",
     ),
     pytest.param(
@@ -275,3 +277,35 @@ async def test_chat_failures(
     assert type(info.value) is error
     assert info.value.message == message
     assert "SECRET" not in info.value.message
+
+
+async def _chat_with_sleeping_transport(timeout_s: float) -> None:
+    async def handler(request: httpx.Request) -> httpx.Response:
+        await asyncio.sleep(5)
+        return httpx.Response(200)
+
+    async with httpx.AsyncClient(
+        transport=httpx.MockTransport(handler), base_url="http://llm.test/v1/"
+    ) as http:
+        await LlmClient(http, "m", 2.0).chat(
+            MESSAGES,
+            schema=response_schema(),
+            schema_name=SCHEMA_NAME,
+            max_tokens=100,
+            temperature=0.5,
+            timeout_s=timeout_s,
+            disable_thinking=False,
+        )
+
+
+async def test_chat_deadline_covers_the_whole_call() -> None:
+    started = time.perf_counter()
+    with pytest.raises(LlmTimeoutError):
+        await _chat_with_sleeping_transport(0.2)
+    assert time.perf_counter() - started < 0.7
+
+
+async def test_timeout_message_uses_short_number() -> None:
+    with pytest.raises(LlmTimeoutError) as info:
+        await _chat_with_sleeping_transport(0.2)
+    assert info.value.message == "LLM runtime did not answer within 0.2 s"

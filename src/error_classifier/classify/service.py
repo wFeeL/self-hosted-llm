@@ -14,12 +14,18 @@ from error_classifier.classify.prompt import (
 )
 from error_classifier.classify.schema import SCHEMA_NAME, ClassificationResult, response_schema
 from error_classifier.config import Settings
-from error_classifier.errors import InvalidInputError, LlmBadResponseError, ModelOutputInvalidError
+from error_classifier.errors import (
+    InvalidInputError,
+    LlmBadResponseError,
+    LlmTimeoutError,
+    ModelOutputInvalidError,
+)
 from error_classifier.llm.client import ChatCompletion, ChatMessage
 
 logger = logging.getLogger(__name__)
 
 MAX_ATTEMPTS = 2
+MIN_RETRY_S = 5.0
 
 
 class ChatClient(Protocol):
@@ -106,17 +112,32 @@ class Classifier:
         stats.truncated = norm.truncated
         base = build_messages(norm.text)
         messages: list[ChatMessage] = base
-        for _ in range(MAX_ATTEMPTS):
+        total_s = self._options.timeout_s
+        deadline = start + total_s
+        for attempt in range(MAX_ATTEMPTS):
+            call_s = total_s
+            if attempt > 0:
+                call_s = deadline - self._clock()
+                if call_s < MIN_RETRY_S:
+                    raise LlmTimeoutError(
+                        f"The model gave an invalid answer and the {total_s:g} s request "
+                        "deadline left no time for a retry"
+                    )
             stats.attempts += 1
-            completion = await self._llm.chat(
-                messages,
-                schema=response_schema(),
-                schema_name=SCHEMA_NAME,
-                max_tokens=self._options.max_output_tokens,
-                temperature=self._options.temperature,
-                timeout_s=self._options.timeout_s,
-                disable_thinking=self._options.disable_thinking,
-            )
+            try:
+                completion = await self._llm.chat(
+                    messages,
+                    schema=response_schema(),
+                    schema_name=SCHEMA_NAME,
+                    max_tokens=self._options.max_output_tokens,
+                    temperature=self._options.temperature,
+                    timeout_s=call_s,
+                    disable_thinking=self._options.disable_thinking,
+                )
+            except LlmTimeoutError as exc:
+                raise LlmTimeoutError(
+                    f"The model did not answer within the {total_s:g} s request deadline"
+                ) from exc
             stats.model = completion.model
             stats.prompt_tokens = _add(stats.prompt_tokens, completion.prompt_tokens)
             stats.completion_tokens = _add(stats.completion_tokens, completion.completion_tokens)

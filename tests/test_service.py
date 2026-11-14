@@ -1,6 +1,7 @@
 import json
 import logging
 from collections.abc import Callable, Mapping, Sequence
+from dataclasses import replace
 
 import pytest
 
@@ -99,12 +100,24 @@ class FakeChat:
 
 
 def _clock(*values: float) -> Callable[[], float]:
+    # Returns the given values in turn, then repeats the last one.
     ticks = iter(values)
-    return lambda: next(ticks)
+    last = values[-1]
+
+    def clock() -> float:
+        nonlocal last
+        last = next(ticks, last)
+        return last
+
+    return clock
 
 
-def _classifier(fake: FakeChat, options: ClassifierOptions = OPTIONS) -> Classifier:
-    return Classifier(fake, options, clock=_clock(0.0, 1.234))
+def _classifier(
+    fake: FakeChat,
+    options: ClassifierOptions = OPTIONS,
+    clock: Callable[[], float] | None = None,
+) -> Classifier:
+    return Classifier(fake, options, clock=clock or _clock(0.0, 1.234))
 
 
 async def test_success_first_try() -> None:
@@ -248,7 +261,6 @@ async def test_unknown_finish_reason() -> None:
 @pytest.mark.parametrize(
     "error",
     [
-        LlmTimeoutError("slow"),
         LlmUnavailableError("down"),
         LlmBadResponseError("bad"),
         InvalidInputError("long"),
@@ -261,6 +273,44 @@ async def test_runtime_errors_not_retried(error: ServiceError) -> None:
     with pytest.raises(type(error)) as info:
         await _classifier(fake).classify("boom", stats)
     assert info.value is error
+    assert len(fake.messages) == 1
+    assert stats.attempts == 1
+
+
+DEADLINE = replace(OPTIONS, timeout_s=120.0)
+RETRY_TIMEOUT = (
+    "The model gave an invalid answer and the 120 s request deadline left no time for a retry"
+)
+
+
+async def test_second_attempt_gets_the_remaining_time() -> None:
+    fake = FakeChat(_ok("not json"), _ok())
+    await _classifier(fake, DEADLINE, _clock(0.0, 40.0, 41.0)).classify("boom", ClassifyStats())
+    assert [kw["timeout_s"] for kw in fake.kwargs] == [120.0, 80.0]
+
+
+async def test_too_little_time_for_retry() -> None:
+    fake = FakeChat(_ok("not json"), _ok())
+    stats = ClassifyStats()
+    with pytest.raises(LlmTimeoutError) as info:
+        await _classifier(fake, DEADLINE, _clock(0.0, 116.0)).classify("boom", stats)
+    assert info.value.message == RETRY_TIMEOUT
+    assert len(fake.messages) == 1
+    assert stats.attempts == 1
+
+
+async def test_retry_with_exactly_min_time() -> None:
+    fake = FakeChat(_ok("not json"), _ok())
+    await _classifier(fake, DEADLINE, _clock(0.0, 115.0)).classify("boom", ClassifyStats())
+    assert fake.kwargs[1]["timeout_s"] == 5.0
+
+
+async def test_runtime_timeout_names_the_deadline() -> None:
+    fake = FakeChat(LlmTimeoutError("x"))
+    stats = ClassifyStats()
+    with pytest.raises(LlmTimeoutError) as info:
+        await _classifier(fake, DEADLINE).classify("boom", stats)
+    assert info.value.message == "The model did not answer within the 120 s request deadline"
     assert len(fake.messages) == 1
     assert stats.attempts == 1
 
