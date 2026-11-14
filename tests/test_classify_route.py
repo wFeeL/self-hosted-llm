@@ -1,18 +1,28 @@
+import asyncio
 import json
 import logging
 import re
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, Callable
 
+import anyio
 import httpx
 import pytest
 import respx
 from conftest import Serve
+from fakes import BlockingChat
+from fastapi import FastAPI
 
 from error_classifier.api.app import create_app
 from error_classifier.classify.prompt import INPUT_PREFIX
 from error_classifier.classify.schema import Category, ClassificationResult, Severity
-from error_classifier.classify.service import Classification, Classifier, ClassifyStats
+from error_classifier.classify.service import (
+    Classification,
+    Classifier,
+    ClassifierOptions,
+    ClassifyStats,
+)
 from error_classifier.config import Settings
+from error_classifier.errors import LlmUnavailableError
 
 pytestmark = pytest.mark.anyio
 
@@ -274,7 +284,7 @@ async def test_log_line_fields_on_success(
         await _post(client, "  boom ")
     (record,) = _info_records(caplog)
     assert re.fullmatch(
-        r"classify outcome=ok latency_ms=\d+ model=granite attempts=1 input_chars=4 "
+        r"classify outcome=ok total_ms=\d+ queue_ms=\d+ model=granite attempts=1 input_chars=4 "
         r"truncated=False prompt_tokens=11 completion_tokens=7",
         record.getMessage(),
     )
@@ -289,7 +299,7 @@ async def test_log_line_unknown_fields_are_dashes(
         await client.post("/classify", content=b"{}")
     (record,) = _info_records(caplog)
     assert re.fullmatch(
-        r"classify outcome=invalid_input latency_ms=\d+ model=- attempts=0 input_chars=- "
+        r"classify outcome=invalid_input total_ms=\d+ queue_ms=- model=- attempts=0 input_chars=- "
         r"truncated=- prompt_tokens=- completion_tokens=-",
         record.getMessage(),
     )
@@ -375,6 +385,128 @@ async def test_log_latency_is_the_route_time_for_success(
         response = await _post(client, "boom")
     assert response.json()["latency_ms"] == 987654
     (record,) = _info_records(caplog)
-    match = re.search(r"latency_ms=(\d+)", record.getMessage())
+    match = re.search(r"total_ms=(\d+)", record.getMessage())
     assert match is not None
     assert int(match.group(1)) < 60_000
+
+
+QUEUE_FULL_TEXT = "All model slots are busy and the queue is full, retry later"
+
+
+def _blocking_app(**changes: object) -> FastAPI:
+    return create_app(_settings(**{"max_concurrency": 1, "max_queue": 1, **changes}))
+
+
+def _swap_in(app: FastAPI, chat: BlockingChat) -> None:
+    app.state.classifier = Classifier(chat, ClassifierOptions.from_settings(app.state.settings))
+
+
+async def _until(check: Callable[[], bool]) -> None:
+    while not check():  # noqa: ASYNC110
+        await asyncio.sleep(0.01)
+
+
+def _request(client: httpx.AsyncClient, message: str = "boom") -> asyncio.Task[httpx.Response]:
+    return asyncio.create_task(_post(client, message))
+
+
+async def test_queue_full_gives_429(serve: Serve) -> None:
+    chat = BlockingChat()
+    app = _blocking_app()
+    with anyio.fail_after(5):
+        async with serve(app) as client:
+            _swap_in(app, chat)
+            first = _request(client)
+            await chat.started.wait()
+            second = _request(client)
+            await _until(lambda: app.state.limiter.waiting == 1)
+            third = await _post(client, "boom")
+            chat.release.set()
+            ok = [await first, await second]
+    assert third.status_code == 429
+    assert third.json() == _error_body("queue_full", QUEUE_FULL_TEXT)
+    assert third.headers["retry-after"] == "30"
+    assert [r.status_code for r in ok] == [200, 200]
+
+
+async def test_queue_timeout_gives_429(serve: Serve) -> None:
+    chat = BlockingChat()
+    app = _blocking_app(queue_timeout_s=0.05)
+    with anyio.fail_after(5):
+        async with serve(app) as client:
+            _swap_in(app, chat)
+            first = _request(client)
+            await chat.started.wait()
+            second = await _post(client, "boom")
+            chat.release.set()
+            await first
+    assert second.status_code == 429
+    assert second.json() == _error_body(
+        "queue_full", "No model slot became free within 0.05 s, retry later"
+    )
+
+
+async def test_slot_released_after_error(serve: Serve) -> None:
+    chat = BlockingChat(errors=[LlmUnavailableError("down")])
+    chat.release.set()
+    app = _blocking_app()
+    with anyio.fail_after(5):
+        async with serve(app) as client:
+            _swap_in(app, chat)
+            failed = await _post(client, "boom")
+            ok = await _post(client, "boom")
+            active = app.state.limiter.active
+    assert failed.status_code == 503
+    assert ok.status_code == 200
+    assert active == 0
+
+
+async def test_invalid_input_skips_the_queue(serve: Serve) -> None:
+    chat = BlockingChat()
+    app = _blocking_app()
+    with anyio.fail_after(5):
+        async with serve(app) as client:
+            _swap_in(app, chat)
+            first = _request(client)
+            await chat.started.wait()
+            second = _request(client)
+            await _until(lambda: app.state.limiter.waiting == 1)
+            blank = await _post(client, "  ")
+            chat.release.set()
+            await first
+            await second
+    assert blank.status_code == 400
+
+
+async def test_retry_after_header_rounds_up(serve: Serve) -> None:
+    chat = BlockingChat()
+    app = _blocking_app(max_queue=0, queue_timeout_s=0.2)
+    with anyio.fail_after(5):
+        async with serve(app) as client:
+            _swap_in(app, chat)
+            first = _request(client)
+            await chat.started.wait()
+            rejected = await _post(client, "boom")
+            chat.release.set()
+            await first
+    assert rejected.status_code == 429
+    assert rejected.headers["retry-after"] == "1"
+
+
+async def test_log_line_has_queue_ms(serve: Serve, caplog: pytest.LogCaptureFixture) -> None:
+    caplog.set_level(logging.INFO, logger="error_classifier")
+    chat = BlockingChat()
+    app = _blocking_app(max_queue=0)
+    with anyio.fail_after(5):
+        async with serve(app) as client:
+            _swap_in(app, chat)
+            first = _request(client)
+            await chat.started.wait()
+            await _post(client, "boom")
+            await _post(client, "  ")
+            chat.release.set()
+            await first
+    lines = [r.getMessage() for r in _info_records(caplog)]
+    assert re.search(r"outcome=queue_full total_ms=\d+ queue_ms=\d+ ", lines[0])
+    assert re.search(r"outcome=invalid_input total_ms=\d+ queue_ms=- ", lines[1])
+    assert re.search(r"outcome=ok total_ms=\d+ queue_ms=\d+ ", lines[2])

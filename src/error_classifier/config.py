@@ -13,6 +13,9 @@ class Settings(BaseSettings):
     llm_probe_timeout_s: float = Field(default=2.0, gt=0)
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR"] = "INFO"
     request_timeout_s: float = Field(default=120.0, gt=0)
+    max_concurrency: int = Field(default=2, ge=1, le=64)
+    max_queue: int = Field(default=4, ge=0, le=1000)
+    queue_timeout_s: float = Field(default=30.0, gt=0, le=600)
     max_input_chars: int = Field(default=3000, ge=200, le=4000)
     max_request_bytes: int = 262144
     max_output_tokens: int = Field(default=256, ge=16, le=2048)

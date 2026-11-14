@@ -5,8 +5,9 @@ from conftest import Serve
 from pydantic import ValidationError
 
 from error_classifier.api.app import create_app
+from error_classifier.concurrency import ConcurrencyLimiter
 from error_classifier.config import Settings
-from error_classifier.errors import LlmUnavailableError
+from error_classifier.errors import LlmUnavailableError, QueueFullError
 
 pytestmark = pytest.mark.anyio
 
@@ -46,3 +47,16 @@ def test_create_app_sets_uvicorn_logger_levels(monkeypatch: pytest.MonkeyPatch) 
         monkeypatch.setattr(logging.getLogger(name), "level", logging.INFO)
     create_app(Settings(llm_model="m", log_level="ERROR"))
     assert [logging.getLogger(name).level for name in names] == [logging.ERROR] * 3
+
+
+async def test_lifespan_builds_the_limiter_from_settings(serve: Serve) -> None:
+    settings = Settings(llm_model="m", max_concurrency=3, max_queue=0)
+    app = create_app(settings)
+    async with serve(app):
+        limiter = app.state.limiter
+        assert isinstance(limiter, ConcurrencyLimiter)
+        async with limiter.slot(), limiter.slot(), limiter.slot():
+            assert limiter.active == 3
+            with pytest.raises(QueueFullError):
+                async with limiter.slot():
+                    pass

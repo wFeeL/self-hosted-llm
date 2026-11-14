@@ -30,7 +30,7 @@ client --> api :8000 --> llm :8080
 | 2 | The API talks to the runtime only through the OpenAI-compatible `/v1/chat/completions` | The native llama-server API | No native slot timings. The API code only knows the OpenAI-compatible protocol, but the mapping of runtime errors (context overflow, loading state) and the thinking switch are specific to llama-server |
 | 3 | The runtime enforces the JSON schema through `response_format` (json_schema); the model does not see the schema, fields and enums are described in the prompt; the API validates the answer again with a pydantic model. See [server-common.cpp](https://github.com/ggml-org/llama.cpp/blob/master/tools/server/server-common.cpp) | Prompt and parsing only | The schema stays flat because of converter limits ([grammars/README.md](https://github.com/ggml-org/llama.cpp/blob/master/grammars/README.md)); invalid JSON becomes rare, the check of enums and meaning remains |
 | 4 | One retry on an invalid model answer, with the error text, then 502 `model_output_invalid` | A placeholder `unknown`, unlimited retries | The second request doubles latency in the rare case |
-| 5 | (planned) A semaphore in the API equal to the number of runtime slots; a request waits at most `QUEUE_TIMEOUT_S`, then gets 429 with `Retry-After` | Relying on the llama-server queue | The llama-server queue has no limit and no deadline and never returns 429 ([server-queue.cpp](https://github.com/ggml-org/llama.cpp/blob/master/tools/server/server-queue.cpp)) |
+| 5 | A semaphore in the API equal to the number of runtime slots; a request waits at most `QUEUE_TIMEOUT_S`, then gets 429 with `Retry-After` | Relying on the llama-server queue | The llama-server queue has no limit and no deadline and never returns 429 ([server-queue.cpp](https://github.com/ggml-org/llama.cpp/blob/master/tools/server/server-queue.cpp)) |
 | 6 | A timeout `REQUEST_TIMEOUT_S` on every runtime call, then 504; an overall deadline and cancellation are (planned) | No timeout | That the runtime stops generating after a cancelled call is assumed and still has to be checked |
 | 7 | The model is set in `.env`: repository and GGUF file for `llm`, one alias for both services | Model in code or in the image | Changing the model means editing `.env` and running `docker compose up -d`; both services are recreated because they share the alias |
 | 8 | Answers are in English | Russian, as in the example of the task statement | The difference from the example is explained in the README |
@@ -100,6 +100,9 @@ client --> api :8000 --> llm :8080
 
 | variable | default | meaning |
 |---|---|---|
+| MAX_CONCURRENCY | 2 | Requests classified at the same time, 1 to 64; keep it equal to `LLAMA_ARG_N_PARALLEL` |
+| MAX_QUEUE | 4 | Requests allowed to wait for a free slot, 0 to 1000; one more gets 429 `queue_full` at once |
+| QUEUE_TIMEOUT_S | 30 | Longest wait for a slot in seconds, above 0 up to 600; then 429 `queue_full`, and `Retry-After` is this value rounded up |
 | REQUEST_TIMEOUT_S | 120 | Seconds allowed for each call to the model, so each attempt |
 | MAX_INPUT_CHARS | 3000 | Longest error text sent to the model, 200 to 4000; longer text is truncated |
 | MAX_REQUEST_BYTES | 262144 | Largest request body, not less than 12 times `MAX_INPUT_CHARS` plus 64 |
@@ -118,6 +121,7 @@ Every error has the shape `{"error": {"code": "...", "message": "..."}}`.
 | llm_bad_response | 502 | The runtime rejected the request or answered in an unexpected shape |
 | llm_timeout | 504 | The runtime did not answer within `REQUEST_TIMEOUT_S` |
 | llm_unavailable | 503 | The runtime is unreachable, still loading the model, or failing |
+| queue_full | 429 | All model slots are busy and the queue is full, or no slot became free within `QUEUE_TIMEOUT_S`; the answer carries `Retry-After` |
 | internal_error | 500 | An unexpected error in the service |
 
 ## Operational notes
@@ -133,13 +137,13 @@ Package `error_classifier`. `Status` shows what exists now.
 | Module | Responsibility | Status |
 |---|---|---|
 | `config.py` | Settings from the environment with pydantic-settings, checked at startup | present |
-| `errors.py` | Service error taxonomy with code, HTTP status and text | partial (the codes of `/classify` and `/ready`; the queue code comes with the concurrency limit) |
+| `errors.py` | Service error taxonomy with code, HTTP status and text | present |
 | `llm/client.py` | httpx AsyncClient, OpenAI chat completions, timeouts, usage from the answer | present |
 | `classify/schema.py` | Pydantic model of the answer, enums, JSON schema for `response_format` | present |
 | `classify/prompt.py` | System prompt, few-shot examples, message assembly, the input as a JSON string, truncation | present |
 | `classify/service.py` | Pipeline: normalisation, request, validation, retry, latency | present |
-| `concurrency.py` | Semaphore that waits at most `QUEUE_TIMEOUT_S` | planned |
-| `api/app.py`, `api/routes.py` | FastAPI app, error handlers, `/classify`, `/health`, `/ready` | partial (`/classify`, `/health` and `/ready`; no concurrency limit yet) |
+| `concurrency.py` | Semaphore with a bounded queue that waits at most `QUEUE_TIMEOUT_S` | present |
+| `api/app.py`, `api/routes.py` | FastAPI app, error handlers, `/classify`, `/health`, `/ready` | present |
 | `scripts/evaluate.py` | Runs the set, accuracy per field, share of valid answers, p50 and p95, markdown report | planned |
 | `scripts/bench.py` | Benchmark protocol: cold start, series, memory, CPU | planned |
 | `data/eval_set.jsonl` | Evaluation set | planned |
