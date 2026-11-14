@@ -22,14 +22,22 @@ async def cancel_on_disconnect[T](receive: Receive, work: Coroutine[object, obje
         work_task.cancel()
         watcher.cancel()
         await asyncio.wait({work_task, watcher})
+        for task in (work_task, watcher):
+            if not task.cancelled():
+                task.exception()  # mark retrieved, the cancellation wins
         raise
     if work_task.done():
         watcher.cancel()
         # asyncio.wait does not swallow a cancellation of the caller, unlike suppress().
         await asyncio.wait({watcher})
+        if not watcher.cancelled():
+            watcher.exception()  # mark retrieved, the work result wins
         return work_task.result()
     work_task.cancel()
     await asyncio.wait({work_task})
     if not work_task.cancelled():
         work_task.exception()  # mark retrieved: the client is gone either way
+    # A watcher that failed is a broken receive, not a disconnect.
+    if (error := watcher.exception()) is not None:
+        raise error
     raise ClientDisconnectedError
