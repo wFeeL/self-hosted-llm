@@ -17,7 +17,8 @@ from error_classifier.config import Settings
 
 # Read at import, before the autouse clean_env fixture runs.
 LLM_URL = os.environ.get("LLM_URL", "http://127.0.0.1:8080/v1")
-MODEL_ALIAS = os.environ.get("MODEL_ALIAS", "granite-4.1-3b-q4km")
+MODEL_ALIAS = os.environ.get("MODEL_ALIAS", "qwen3.5-2b-q4km")
+DISABLE_THINKING = os.environ.get("LLM_DISABLE_THINKING", "true").lower() == "true"
 
 pytestmark = [pytest.mark.live, pytest.mark.anyio]
 
@@ -26,7 +27,11 @@ SHORT_MESSAGE = "TypeError: Cannot read properties of undefined (reading 'map')"
 
 
 def _live_settings(**changes: object) -> Settings:
-    values: dict[str, object] = {"llm_base_url": LLM_URL, "llm_model": MODEL_ALIAS}
+    values: dict[str, object] = {
+        "llm_base_url": LLM_URL,
+        "llm_model": MODEL_ALIAS,
+        "llm_disable_thinking": DISABLE_THINKING,
+    }
     return Settings.model_validate({**values, **changes})
 
 

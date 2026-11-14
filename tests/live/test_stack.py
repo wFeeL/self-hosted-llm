@@ -5,7 +5,7 @@ import pytest
 
 # Read at import, before the autouse clean_env fixture runs.
 API_URL = os.environ.get("API_URL", "http://127.0.0.1:8000")
-MODEL_ALIAS = os.environ.get("MODEL_ALIAS", "granite-4.1-3b-q4km")
+MODEL_ALIAS = os.environ.get("MODEL_ALIAS", "qwen3.5-2b-q4km")
 
 pytestmark = pytest.mark.live
 

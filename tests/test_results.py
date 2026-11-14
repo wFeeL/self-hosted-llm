@@ -183,22 +183,19 @@ def test_git_state_in_a_repo(tmp_path: Path) -> None:
 
 
 @pytest.mark.parametrize(
-    ("before", "after", "env", "expected"),
+    ("before", "after", "expected"),
     [
-        ([1.5, 1.0, 1.0], [0.5, 0.5, 0.5], {"LLAMA_ARG_THREADS": "6"}, True),
-        ([1.4, 1.0, 1.0], [7.4, 5.0, 3.0], {"LLAMA_ARG_THREADS": "6"}, False),
-        ([1.4, 1.0, 1.0], [7.5, 5.0, 3.0], {"LLAMA_ARG_THREADS": "6"}, True),
-        ([0.5, 0.5, 0.5], [5.5, 5.0, 3.0], {"LLAMA_ARG_THREADS": "4"}, True),
-        ([0.5, 0.5, 0.5], [5.4, 5.0, 3.0], {"LLAMA_ARG_THREADS": "4"}, False),
-        ([0.5, 0.5, 0.5], [7.5, 5.0, 3.0], {}, True),
-        ([0.5, 0.5, 0.5], [7.4, 5.0, 3.0], {"LLAMA_ARG_THREADS": "many"}, False),
-        (None, None, {}, False),
+        ([1.5, 1.0, 1.0], [0.5, 0.5, 0.5], True),
+        ([1.49, 1.0, 1.0], [0.5, 0.5, 0.5], False),
+        # The runtime's own load after the run does not count.
+        ([1.26, 1.0, 1.0], [10.58, 5.0, 3.0], False),
+        ([1.5, 1.0, 1.0], None, True),
+        (None, None, False),
     ],
 )
 def test_model_run_loaded(
     before: list[float] | None,
     after: list[float] | None,
-    env: dict[str, str],
     expected: bool,
 ) -> None:
     doc = _doc(
@@ -206,7 +203,6 @@ def test_model_run_loaded(
         A_RESULTS,
         loadavg_before=before,
         loadavg_after=after,
-        runtime_env=env,
     )
     run = model_run(doc, ITEMS)
     assert run.loaded is expected

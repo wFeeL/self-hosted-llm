@@ -332,6 +332,16 @@ def test_choice_disqualifies() -> None:
     assert choice.model == "m-fine"
 
 
+def test_choice_names_the_only_eligible_model() -> None:
+    leaky_a = _run("m-a", set(range(40)), 60, ALL, 1, 1000)
+    leaky_b = _run("m-b", set(range(45)), 60, ALL, 2, 1000)
+    clean = _run("m-c", set(range(30)), 60, ALL, 0, 1000)
+    choice = choose_model([leaky_a, leaky_b, clean])
+    assert choice.model == "m-c"
+    assert choice.reason == "the only model that passed the validity and leak thresholds"
+    assert choice.common_p50_ms == {}
+
+
 def test_choice_none_when_all_fail() -> None:
     runs = [_run(f"m-{i}", set(range(40)), 50, ALL, 0, 1000) for i in range(2)]
     choice = choose_model(runs)
@@ -426,3 +436,7 @@ def test_choice_common_rows_only() -> None:
     choice = choose_model([slow, other])
     assert choice.common_p50_ms == {"m-a": 12000, "m-b": 10000}
     assert choice.model == "m-b"
+
+
+def test_default_model_is_the_chosen_one() -> None:
+    assert DEFAULT_MODEL == "qwen3.5-2b-q4km"
