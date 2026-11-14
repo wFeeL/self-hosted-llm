@@ -36,6 +36,17 @@ RUNTIME_ENV: Final[tuple[str, ...]] = (
     "LLAMA_ARG_MMPROJ_AUTO",
 )
 
+# Everything a fair comparison needs equal, except the model files and the alias.
+SAME_RUNTIME: Final[tuple[str, ...]] = (
+    "LLAMA_ARG_CTX_SIZE",
+    "LLAMA_ARG_N_PARALLEL",
+    "LLAMA_ARG_THREADS",
+    "LLAMA_ARG_BATCH",
+    "LLAMA_ARG_REASONING",
+    "LLAMA_ARG_CHAT_TEMPLATE_KWARGS",
+    "LLAMA_ARG_MMPROJ_AUTO",
+)
+
 
 class _Model(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
@@ -109,7 +120,7 @@ def git_state(repo: Path) -> tuple[str | None, bool | None]:
             check=False,
         )
         status = subprocess.run(
-            ["git", "-C", str(repo), "status", "--porcelain"],
+            ["git", "-C", str(repo), "status", "--porcelain", "--untracked-files=no"],
             capture_output=True,
             text=True,
             timeout=5,
@@ -197,6 +208,14 @@ def render_report(docs: Sequence[ResultDoc], items: Sequence[EvalItem]) -> str:
             raise ValueError(f"{doc.meta.model}: the run is incomplete")
     if len({d.meta.dataset_sha256 for d in ordered}) != 1:
         raise ValueError("the results come from different datasets")
+    if len({d.meta.prompt_sha256 for d in ordered}) != 1:
+        raise ValueError("the results come from different prompts")
+    shared = [d.meta.settings.model_copy(update={"disable_thinking": False}) for d in ordered]
+    if any(item != shared[0] for item in shared):
+        raise ValueError("the results come from different settings")
+    for key in SAME_RUNTIME:
+        if len({d.meta.runtime_env.get(key) for d in ordered}) != 1:
+            raise ValueError(f"the results come from different runtime settings: {key}")
     first_items = {c: s.items for c, s in ordered[0].summary.per_category.items()}
     for doc in ordered:
         if {c: s.items for c, s in doc.summary.per_category.items()} != first_items:

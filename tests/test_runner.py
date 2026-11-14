@@ -6,7 +6,12 @@ import pytest
 from error_classifier.classify.prompt import INPUT_PREFIX, build_messages
 from error_classifier.classify.schema import Category, Severity
 from error_classifier.classify.service import ClassifierOptions
-from error_classifier.errors import LlmBadResponseError, LlmTimeoutError, LlmUnavailableError
+from error_classifier.errors import (
+    LlmBadResponseError,
+    LlmTimeoutError,
+    LlmUnavailableError,
+    ModelOutputInvalidError,
+)
 from error_classifier.evaluation.dataset import EvalItem
 from error_classifier.evaluation.metrics import AttemptRecord, ItemResult
 from error_classifier.evaluation.runner import WARMUP_TEXT, RecordingChat, run_eval
@@ -211,13 +216,12 @@ async def test_warmup_runs_first_and_is_not_recorded() -> None:
     assert all(len(r.attempt_log) == 1 for r in out.results)
 
 
-async def test_warmup_model_error_is_ignored() -> None:
+async def test_warmup_model_error_raises() -> None:
     clock = Clock()
     chat = ScriptedChat(clock)
     chat.on(WARMUP_TEXT, NOT_JSON, NOT_JSON)
-    out = await run_eval(_items(3), chat, OPTIONS, max_s=1000, clock=clock)
-    assert len(out.results) == 3
-    assert all(r.outcome == "ok" and len(r.attempt_log) == 1 for r in out.results)
+    with pytest.raises(ModelOutputInvalidError):
+        await run_eval(_items(3), chat, OPTIONS, max_s=1000, clock=clock)
 
 
 async def test_warmup_unavailable_raises() -> None:

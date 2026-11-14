@@ -166,7 +166,20 @@ def test_run_with_runtime_dying_in_warmup_exits_3(
     fake.router.post("/v1/chat/completions").mock(return_value=httpx.Response(503))
     code, _ = _run(tmp_path / "m.json")
     assert code == 3
-    assert "LLM runtime is not ready" in capsys.readouterr().err
+    assert "warm-up failed: llm_unavailable" in capsys.readouterr().err
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_run_with_invalid_warmup_answers_exits_3(
+    fake: Fake, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    answer = {"choices": [{"finish_reason": "stop", "message": {"content": "not json"}}]}
+    fake.router.post("/v1/chat/completions").mock(
+        return_value=httpx.Response(200, json={"model": "m-test", **answer})
+    )
+    code, _ = _run(tmp_path / "m.json")
+    assert code == 3
+    assert "warm-up failed: model_output_invalid" in capsys.readouterr().err
     assert list(tmp_path.iterdir()) == []
 
 
@@ -378,3 +391,17 @@ def test_report_rejects_a_foreign_dataset(
     capsys.readouterr()
     assert cli.main(["report", "--dataset", str(other), str(out)]) == 2
     assert "dataset" in capsys.readouterr().err
+
+
+def test_report_warns_about_another_prompt(
+    fake: Fake,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    out = tmp_path / "m.json"
+    assert _run(out)[0] == 0
+    monkeypatch.setattr(results, "prompt_sha256", lambda: "0" * 64)
+    capsys.readouterr()
+    assert cli.main(["report", str(out)]) == 0
+    assert "warning: m-test was run with another prompt" in capsys.readouterr().err

@@ -5,6 +5,7 @@ from error_classifier.config import Settings
 from error_classifier.evaluation.dataset import DEFAULT_DATASET, load_dataset
 from error_classifier.evaluation.metrics import DEFAULT_MODEL, choose_model, summarize
 from error_classifier.evaluation.results import (
+    SAME_RUNTIME,
     ResultDoc,
     dataset_sha256,
     model_run,
@@ -17,15 +18,6 @@ ROOT = Path(__file__).resolve().parents[1]
 RESULTS = sorted((ROOT / "eval" / "results").glob("*.json"))
 MARKER_START = "<!-- eval-table:start -->"
 MARKER_END = "<!-- eval-table:end -->"
-SAME_RUNTIME = (
-    "LLAMA_ARG_CTX_SIZE",
-    "LLAMA_ARG_N_PARALLEL",
-    "LLAMA_ARG_THREADS",
-    "LLAMA_ARG_BATCH",
-    "LLAMA_ARG_REASONING",
-    "LLAMA_ARG_CHAT_TEMPLATE_KWARGS",
-    "LLAMA_ARG_MMPROJ_AUTO",
-)
 REQUIRED_RUNTIME = (
     "LLAMA_ARG_CTX_SIZE",
     "LLAMA_ARG_N_PARALLEL",
@@ -121,3 +113,11 @@ def test_env_example_thinking_matches_the_chosen_run() -> None:
     assert chosen is not None
     flag = _env_example()["LLM_DISABLE_THINKING"].lower() == "true"
     assert flag == chosen.meta.settings.disable_thinking
+
+
+def test_env_example_model_files_match_the_chosen_run() -> None:
+    chosen = _chosen_doc()
+    assert chosen is not None
+    env = _env_example()
+    for key in ("LLAMA_ARG_HF_REPO", "LLAMA_ARG_HF_FILE"):
+        assert env[key] == chosen.meta.runtime_env[key], key
