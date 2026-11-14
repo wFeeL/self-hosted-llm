@@ -9,6 +9,7 @@ from error_classifier.classify.schema import Category, Severity
 from error_classifier.evaluation.dataset import EvalItem
 from error_classifier.evaluation.metrics import AttemptRecord, ItemResult, summarize
 from error_classifier.evaluation.results import (
+    SAME_RUNTIME,
     ResultDoc,
     RunMeta,
     RunSettings,
@@ -182,6 +183,19 @@ def test_git_state_in_a_repo(tmp_path: Path) -> None:
     assert git_state(tmp_path) == (sha, True)
 
 
+def test_git_state_ignores_untracked_files(tmp_path: Path) -> None:
+    _git(tmp_path, "init", "-q")
+    (tmp_path / "f.txt").write_text("one\n", encoding="utf-8")
+    _git(tmp_path, "add", "f.txt")
+    _git(tmp_path, "-c", "commit.gpgsign=false", "commit", "-q", "-m", "init")
+    (tmp_path / "scratch.txt").write_text("new\n", encoding="utf-8")
+    sha, dirty = git_state(tmp_path)
+    assert sha is not None
+    assert dirty is False
+    (tmp_path / "f.txt").write_text("two\n", encoding="utf-8")
+    assert git_state(tmp_path) == (sha, True)
+
+
 @pytest.mark.parametrize(
     ("before", "after", "expected"),
     [
@@ -330,4 +344,54 @@ def test_report_rejects_incomplete() -> None:
 def test_report_rejects_different_datasets() -> None:
     docs = [_doc("a-model", A_RESULTS), _doc("b-model", B_RESULTS, dataset_sha256="e" * 64)]
     with pytest.raises(ValueError, match="dataset"):
+        render_report(docs, ITEMS)
+
+
+def test_report_rejects_different_prompts() -> None:
+    docs = [_doc("a-model", A_RESULTS), _doc("b-model", B_RESULTS, prompt_sha256="q" * 64)]
+    with pytest.raises(ValueError, match="prompt"):
+        render_report(docs, ITEMS)
+
+
+def test_report_rejects_different_settings() -> None:
+    other = RunSettings(
+        temperature=0.0,
+        max_output_tokens=512,
+        max_input_chars=3000,
+        request_timeout_s=120.0,
+        disable_thinking=False,
+    )
+    docs = [_doc("a-model", A_RESULTS), _doc("b-model", B_RESULTS, settings=other)]
+    with pytest.raises(ValueError, match="settings"):
+        render_report(docs, ITEMS)
+
+
+def test_report_allows_a_different_thinking_switch() -> None:
+    thinking_off = RunSettings(
+        temperature=0.0,
+        max_output_tokens=256,
+        max_input_chars=3000,
+        request_timeout_s=120.0,
+        disable_thinking=True,
+    )
+    docs = [_doc("a-model", A_RESULTS), _doc("b-model", B_RESULTS, settings=thinking_off)]
+    assert "b-model" in render_report(docs, ITEMS)
+
+
+@pytest.mark.parametrize("key", SAME_RUNTIME)
+def test_report_rejects_different_runtime_settings(key: str) -> None:
+    docs = [
+        _doc("a-model", A_RESULTS, runtime_env={key: "1"}),
+        _doc("b-model", B_RESULTS, runtime_env={key: "2"}),
+    ]
+    with pytest.raises(ValueError, match=key):
+        render_report(docs, ITEMS)
+
+
+def test_report_treats_a_missing_runtime_key_as_a_difference_from_a_value() -> None:
+    docs = [
+        _doc("a-model", A_RESULTS, runtime_env={"LLAMA_ARG_REASONING": "off"}),
+        _doc("b-model", B_RESULTS, runtime_env={}),
+    ]
+    with pytest.raises(ValueError, match="LLAMA_ARG_REASONING"):
         render_report(docs, ITEMS)

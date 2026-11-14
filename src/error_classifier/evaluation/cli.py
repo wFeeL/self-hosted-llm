@@ -26,7 +26,7 @@ from error_classifier.evaluation.dataset import (
 )
 from error_classifier.evaluation.metrics import LOAD_LIMIT, ItemResult, summarize
 from error_classifier.evaluation.results import ResultDoc, RunMeta, RunSettings
-from error_classifier.evaluation.runner import ENVIRONMENT_ERRORS, run_eval
+from error_classifier.evaluation.runner import run_eval
 from error_classifier.llm.client import LlmClient, build_http_client
 
 LOAD_WAIT_MAX_S = 600
@@ -134,8 +134,8 @@ async def _run_async(
                 probe=llm.check_ready,
                 on_item=_progress,
             )
-        except ENVIRONMENT_ERRORS as exc:
-            _err(f"LLM runtime is not ready: {exc}")
+        except ServiceError as exc:
+            _err(f"warm-up failed: {exc.code}: {exc}")
             return 3
 
     after = loadavg()
@@ -218,6 +218,7 @@ def _report(args: argparse.Namespace) -> int:
     except (DatasetError, OSError) as exc:
         _err(str(exc))
         return 2
+    prompt_hash = results.prompt_sha256()
     docs: list[ResultDoc] = []
     for path in cast("list[Path]", args.paths):
         try:
@@ -228,6 +229,8 @@ def _report(args: argparse.Namespace) -> int:
         if doc.meta.dataset_sha256 != dataset_hash:
             _err(f"{path}: the result was made on a different dataset than {dataset}")
             return 2
+        if doc.meta.prompt_sha256 != prompt_hash:
+            _err(f"warning: {doc.meta.model} was run with another prompt")
         docs.append(doc)
     try:
         text = results.render_report(docs, items)

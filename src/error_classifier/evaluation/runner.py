@@ -10,13 +10,12 @@ from error_classifier.classify.service import (
     ClassifierOptions,
     ClassifyStats,
 )
-from error_classifier.errors import LlmBadResponseError, LlmUnavailableError, ServiceError
+from error_classifier.errors import LlmUnavailableError, ServiceError
 from error_classifier.evaluation.dataset import EvalItem
 from error_classifier.evaluation.metrics import AttemptRecord, ItemResult
 from error_classifier.llm.client import ChatCompletion, ChatMessage
 
 WARMUP_TEXT: Final = "ValueError: invalid literal for int() with base 10: 'abc'"
-ENVIRONMENT_ERRORS: Final = (LlmUnavailableError, LlmBadResponseError)  # warm-up only
 RECOVERY_WAIT_S: Final = 60.0
 RECOVERY_STEP_S: Final = 5.0
 
@@ -163,12 +162,7 @@ async def run_eval(
     recorder = RecordingChat(chat)
     classifier = Classifier(recorder, options, clock=clock)
     start = clock()
-    try:
-        await classifier.classify(WARMUP_TEXT, ClassifyStats())
-    except ENVIRONMENT_ERRORS:
-        raise
-    except ServiceError:
-        pass
+    await classifier.classify(WARMUP_TEXT, ClassifyStats())
     recorder.take()
 
     results: list[ItemResult] = []
