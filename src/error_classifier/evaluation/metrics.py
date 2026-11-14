@@ -251,6 +251,10 @@ def choose_model(runs: Sequence[ModelRun], default_model: str = DEFAULT_MODEL) -
     ]
     if not eligible:
         return Choice(None, "no model passed the validity and leak thresholds", {})
+    if len(eligible) == 1:
+        return Choice(
+            eligible[0].model, "the only model that passed the validity and leak thresholds", {}
+        )
 
     best = max(run.summary.both_correct for run in eligible)
     leaders = [run for run in eligible if run.summary.both_correct == best]
