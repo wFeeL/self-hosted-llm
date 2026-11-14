@@ -8,6 +8,7 @@ from fastapi.responses import JSONResponse
 
 from error_classifier.api.routes import describe_invalid, router
 from error_classifier.classify.service import Classifier, ClassifierOptions
+from error_classifier.concurrency import ConcurrencyLimiter
 from error_classifier.config import Settings, load_settings
 from error_classifier.errors import ServiceError
 from error_classifier.llm.client import LlmClient, build_http_client
@@ -18,6 +19,7 @@ async def _service_error_handler(request: Request, exc: Exception) -> JSONRespon
     return JSONResponse(
         status_code=exc.status_code,
         content={"error": {"code": exc.code, "message": exc.message}},
+        headers=exc.headers(),
     )
 
 
@@ -51,6 +53,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             app.state.classifier = Classifier(
                 app.state.llm, ClassifierOptions.from_settings(settings)
             )
+            app.state.limiter = ConcurrencyLimiter.from_settings(settings)
             yield
 
     app = FastAPI(lifespan=lifespan)

@@ -4,10 +4,11 @@ from collections.abc import Iterable, Mapping, Sequence
 from typing import cast
 
 from fastapi import APIRouter, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel, ConfigDict, ValidationError
 
 from error_classifier.classify.service import Classifier, ClassifyStats
+from error_classifier.concurrency import ConcurrencyLimiter
 from error_classifier.config import Settings
 from error_classifier.errors import InvalidInputError, ServiceError
 from error_classifier.llm.client import LlmClient
@@ -28,6 +29,10 @@ def get_llm(request: Request) -> LlmClient:
 
 def get_classifier(request: Request) -> Classifier:
     return cast(Classifier, request.app.state.classifier)
+
+
+def get_limiter(request: Request) -> ConcurrencyLimiter:
+    return cast(ConcurrencyLimiter, request.app.state.limiter)
 
 
 def describe_invalid(errors: Iterable[Mapping[str, object]]) -> str:
@@ -59,13 +64,18 @@ def _dash(value: object) -> str:
 
 
 def _log_outcome(
-    outcome: str, latency_ms: int, stats: ClassifyStats, input_chars: int | None
+    outcome: str,
+    total_ms: int,
+    stats: ClassifyStats,
+    input_chars: int | None,
+    queue_ms: int | None,
 ) -> None:
     logger.info(
-        "classify outcome=%s latency_ms=%d model=%s attempts=%s input_chars=%s truncated=%s "
-        "prompt_tokens=%s completion_tokens=%s",
+        "classify outcome=%s total_ms=%d queue_ms=%s model=%s attempts=%s input_chars=%s "
+        "truncated=%s prompt_tokens=%s completion_tokens=%s",
         outcome,
-        latency_ms,
+        total_ms,
+        _dash(queue_ms),
         _dash(stats.model),
         stats.attempts,
         _dash(input_chars),
@@ -88,14 +98,21 @@ async def ready(request: Request) -> dict[str, str]:
 
 
 @router.post("/classify", response_model=None)
-async def classify(request: Request) -> dict[str, object] | JSONResponse:
+async def classify(request: Request) -> dict[str, object] | Response:
     started = time.perf_counter()
     settings = cast(Settings, request.app.state.settings)
     stats = ClassifyStats()
     message_chars: int | None = None
+    queue_started: float | None = None
+    queue_ms: int | None = None
 
     def elapsed_ms() -> int:
         return round((time.perf_counter() - started) * 1000)
+
+    def waited_ms() -> int | None:
+        if queue_ms is None and queue_started is not None:
+            return round((time.perf_counter() - queue_started) * 1000)
+        return queue_ms
 
     try:
         body = await read_body_limited(request, settings.max_request_bytes)
@@ -107,20 +124,25 @@ async def classify(request: Request) -> dict[str, object] | JSONResponse:
         message_chars = len(parsed.message.strip())
         if message_chars == 0:
             raise InvalidInputError("Field 'message' must not be empty")
-        result = await get_classifier(request).classify(parsed.message, stats)
+        queue_started = time.perf_counter()
+        async with get_limiter(request).slot():
+            queue_ms = round((time.perf_counter() - queue_started) * 1000)
+            result = await get_classifier(request).classify(parsed.message, stats)
     except ServiceError as exc:
-        _log_outcome(exc.code, elapsed_ms(), stats, stats.input_chars or message_chars)
+        _log_outcome(exc.code, elapsed_ms(), stats, stats.input_chars or message_chars, waited_ms())
         raise
     except Exception as exc:
         # Starlette re-raises after its own 500 handler, so the route answers itself.
         logger.error("classify failed with %s", type(exc).__name__)
         logger.debug("classify failure trace", exc_info=exc)
-        _log_outcome("internal_error", elapsed_ms(), stats, stats.input_chars or message_chars)
+        _log_outcome(
+            "internal_error", elapsed_ms(), stats, stats.input_chars or message_chars, waited_ms()
+        )
         return JSONResponse(
             status_code=500,
             content={"error": {"code": "internal_error", "message": "Internal error"}},
         )
-    _log_outcome("ok", elapsed_ms(), stats, stats.input_chars)
+    _log_outcome("ok", elapsed_ms(), stats, stats.input_chars, queue_ms)
     return {
         "category": result.result.category.value,
         "severity": result.result.severity.value,
