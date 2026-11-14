@@ -100,6 +100,9 @@ client --> api :8000 --> llm :8080
 
 | variable | default | meaning |
 |---|---|---|
+| MAX_CONCURRENCY | 2 | Requests classified at the same time, 1 to 64; keep it equal to `LLAMA_ARG_N_PARALLEL` |
+| MAX_QUEUE | 4 | Requests allowed to wait for a free slot, 0 to 1000; one more gets 429 `queue_full` at once |
+| QUEUE_TIMEOUT_S | 30 | Longest wait for a slot in seconds, above 0 up to 600; then 429 `queue_full`, and `Retry-After` is this value rounded up |
 | REQUEST_TIMEOUT_S | 120 | Seconds allowed for each call to the model, so each attempt |
 | MAX_INPUT_CHARS | 3000 | Longest error text sent to the model, 200 to 4000; longer text is truncated |
 | MAX_REQUEST_BYTES | 262144 | Largest request body, not less than 12 times `MAX_INPUT_CHARS` plus 64 |
@@ -118,6 +121,7 @@ Every error has the shape `{"error": {"code": "...", "message": "..."}}`.
 | llm_bad_response | 502 | The runtime rejected the request or answered in an unexpected shape |
 | llm_timeout | 504 | The runtime did not answer within `REQUEST_TIMEOUT_S` |
 | llm_unavailable | 503 | The runtime is unreachable, still loading the model, or failing |
+| queue_full | 429 | All model slots are busy and the queue is full, or no slot became free within `QUEUE_TIMEOUT_S`; the answer carries `Retry-After` |
 | internal_error | 500 | An unexpected error in the service |
 
 ## Operational notes
@@ -133,7 +137,7 @@ Package `error_classifier`. `Status` shows what exists now.
 | Module | Responsibility | Status |
 |---|---|---|
 | `config.py` | Settings from the environment with pydantic-settings, checked at startup | present |
-| `errors.py` | Service error taxonomy with code, HTTP status and text | partial (the codes of `/classify` and `/ready`; the queue code comes with the concurrency limit) |
+| `errors.py` | Service error taxonomy with code, HTTP status and text | present |
 | `llm/client.py` | httpx AsyncClient, OpenAI chat completions, timeouts, usage from the answer | present |
 | `classify/schema.py` | Pydantic model of the answer, enums, JSON schema for `response_format` | present |
 | `classify/prompt.py` | System prompt, few-shot examples, message assembly, the input as a JSON string, truncation | present |

@@ -75,6 +75,14 @@ def test_classification_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
     assert settings.llm_disable_thinking is False
 
 
+def test_concurrency_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("LLM_MODEL", "m")
+    settings = load_settings()
+    assert settings.max_concurrency == 2
+    assert settings.max_queue == 4
+    assert settings.queue_timeout_s == 30.0
+
+
 def test_reads_classification_variables(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("LLM_MODEL", "m")
     monkeypatch.setenv("REQUEST_TIMEOUT_S", "30")
@@ -102,6 +110,10 @@ def test_reads_classification_variables(monkeypatch: pytest.MonkeyPatch) -> None
         ("MAX_OUTPUT_TOKENS", "2049"),
         ("LLM_TEMPERATURE", "-0.1"),
         ("LLM_TEMPERATURE", "2.1"),
+        ("MAX_CONCURRENCY", "0"),
+        ("MAX_CONCURRENCY", "65"),
+        ("MAX_QUEUE", "-1"),
+        ("QUEUE_TIMEOUT_S", "0"),
     ],
 )
 def test_classification_bounds_fail(monkeypatch: pytest.MonkeyPatch, name: str, value: str) -> None:
@@ -121,6 +133,7 @@ def test_classification_bounds_fail(monkeypatch: pytest.MonkeyPatch, name: str, 
         ("MAX_OUTPUT_TOKENS", "2048"),
         ("LLM_TEMPERATURE", "0"),
         ("LLM_TEMPERATURE", "2"),
+        ("MAX_QUEUE", "0"),
     ],
 )
 def test_classification_bounds_accept(

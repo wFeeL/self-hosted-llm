@@ -15,6 +15,9 @@ README = (ROOT / "README.md").read_text(encoding="utf-8")
 ENUM_VALUES = {str(v) for v in [*Category, *Severity]}
 SETTINGS_VARIABLES = (
     "REQUEST_TIMEOUT_S",
+    "MAX_CONCURRENCY",
+    "MAX_QUEUE",
+    "QUEUE_TIMEOUT_S",
     "MAX_INPUT_CHARS",
     "MAX_REQUEST_BYTES",
     "MAX_OUTPUT_TOKENS",

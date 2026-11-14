@@ -9,6 +9,9 @@ class ServiceError(Exception):
         super().__init__(message)
         self.message = message
 
+    def headers(self) -> dict[str, str]:
+        return {}
+
 
 class LlmUnavailableError(ServiceError):
     code = "llm_unavailable"
@@ -33,3 +36,15 @@ class LlmBadResponseError(ServiceError):
 class LlmTimeoutError(ServiceError):
     code = "llm_timeout"
     status_code = 504
+
+
+class QueueFullError(ServiceError):
+    code = "queue_full"
+    status_code = 429
+
+    def __init__(self, message: str, retry_after_s: int) -> None:
+        super().__init__(message)
+        self.retry_after_s = retry_after_s
+
+    def headers(self) -> dict[str, str]:
+        return {"Retry-After": str(self.retry_after_s)}
