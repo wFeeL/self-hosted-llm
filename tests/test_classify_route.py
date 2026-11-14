@@ -2,6 +2,7 @@ import asyncio
 import json
 import logging
 import re
+import time
 from collections.abc import AsyncGenerator, Callable
 
 import anyio
@@ -11,6 +12,7 @@ import respx
 from conftest import Serve
 from fakes import BlockingChat
 from fastapi import FastAPI
+from starlette.types import Message
 
 from error_classifier.api.app import create_app
 from error_classifier.classify.prompt import INPUT_PREFIX
@@ -22,7 +24,8 @@ from error_classifier.classify.service import (
     ClassifyStats,
 )
 from error_classifier.config import Settings
-from error_classifier.errors import LlmUnavailableError
+from error_classifier.errors import LlmTimeoutError, LlmUnavailableError
+from error_classifier.llm.client import LlmClient
 
 pytestmark = pytest.mark.anyio
 
@@ -510,3 +513,159 @@ async def test_log_line_has_queue_ms(serve: Serve, caplog: pytest.LogCaptureFixt
     assert re.search(r"outcome=queue_full total_ms=\d+ queue_ms=\d+ ", lines[0])
     assert re.search(r"outcome=invalid_input total_ms=\d+ queue_ms=- ", lines[1])
     assert re.search(r"outcome=ok total_ms=\d+ queue_ms=\d+ ", lines[2])
+
+
+async def _asgi_post(
+    app: FastAPI, body: bytes, disconnect: asyncio.Event, *, body_complete: bool = True
+) -> list[Message]:
+    headers = [(b"content-type", b"application/json")]
+    if body_complete:
+        headers.append((b"content-length", str(len(body)).encode()))
+    scope = {
+        "type": "http",
+        "asgi": {"version": "3.0"},
+        "http_version": "1.1",
+        "method": "POST",
+        "scheme": "http",
+        "path": "/classify",
+        "raw_path": b"/classify",
+        "query_string": b"",
+        "root_path": "",
+        "headers": headers,
+        "client": ("127.0.0.1", 50000),
+        "server": ("api.test", 80),
+    }
+    sent: list[Message] = []
+    body_sent = False
+
+    async def receive() -> Message:
+        nonlocal body_sent
+        if not body_sent:
+            body_sent = True
+            return {"type": "http.request", "body": body, "more_body": not body_complete}
+        await disconnect.wait()
+        return {"type": "http.disconnect"}
+
+    async def send(message: Message) -> None:
+        sent.append(message)
+
+    await app(scope, receive, send)
+    return sent
+
+
+def _status(messages: list[Message]) -> int:
+    return next(m["status"] for m in messages if m["type"] == "http.response.start")
+
+
+def _outcomes(caplog: pytest.LogCaptureFixture) -> list[str]:
+    return [r.getMessage().split()[1] for r in _info_records(caplog)]
+
+
+BODY = b'{"message": "boom"}'
+
+
+async def test_disconnect_cancels_the_runtime_call(caplog: pytest.LogCaptureFixture) -> None:
+    caplog.set_level(logging.INFO, logger="error_classifier")
+    chat = BlockingChat()
+    app = _blocking_app()
+    disconnect = asyncio.Event()
+    with anyio.fail_after(5):
+        async with app.router.lifespan_context(app):
+            _swap_in(app, chat)
+            task = asyncio.create_task(_asgi_post(app, BODY, disconnect))
+            await chat.started.wait()
+            disconnect.set()
+            messages = await task
+            active = app.state.limiter.active
+    assert chat.cancelled == 1
+    assert active == 0
+    assert _outcomes(caplog) == ["outcome=client_closed"]
+    assert _status(messages) == 499
+
+
+async def test_disconnect_while_queued(serve: Serve, caplog: pytest.LogCaptureFixture) -> None:
+    caplog.set_level(logging.INFO, logger="error_classifier")
+    chat = BlockingChat()
+    app = _blocking_app()
+    disconnect = asyncio.Event()
+    with anyio.fail_after(5):
+        async with serve(app) as client:
+            _swap_in(app, chat)
+            first = _request(client)
+            await chat.started.wait()
+            second = asyncio.create_task(_asgi_post(app, BODY, disconnect))
+            await _until(lambda: app.state.limiter.waiting == 1)
+            disconnect.set()
+            await second
+            waiting = app.state.limiter.waiting
+            chat.release.set()
+            response = await first
+    assert waiting == 0
+    assert chat.calls == 1
+    assert response.status_code == 200
+    assert "outcome=client_closed" in _outcomes(caplog)
+
+
+async def test_disconnect_cancels_a_real_client_call(caplog: pytest.LogCaptureFixture) -> None:
+    caplog.set_level(logging.INFO, logger="error_classifier")
+    started = asyncio.Event()
+
+    async def slow(request: httpx.Request) -> httpx.Response:
+        started.set()
+        await asyncio.sleep(30)
+        return httpx.Response(200)
+
+    settings = _settings(request_timeout_s=60)
+    app = create_app(settings)
+    disconnect = asyncio.Event()
+    with anyio.fail_after(5):
+        async with (
+            httpx.AsyncClient(
+                transport=httpx.MockTransport(slow), base_url="http://llm.test/v1/"
+            ) as http,
+            app.router.lifespan_context(app),
+        ):
+            app.state.classifier = Classifier(
+                LlmClient(http, "m", 2.0), ClassifierOptions.from_settings(settings)
+            )
+            task = asyncio.create_task(_asgi_post(app, BODY, disconnect))
+            await started.wait()
+            disconnected_at = time.perf_counter()
+            disconnect.set()
+            await task
+            elapsed = time.perf_counter() - disconnected_at
+    assert elapsed < 1
+    assert _outcomes(caplog) == ["outcome=client_closed"]
+
+
+async def test_disconnect_while_reading_body(caplog: pytest.LogCaptureFixture) -> None:
+    caplog.set_level(logging.INFO, logger="error_classifier")
+    app = create_app(_settings())
+    disconnect = asyncio.Event()
+    disconnect.set()
+    with anyio.fail_after(5):
+        async with app.router.lifespan_context(app):
+            await _asgi_post(app, b'{"message": "bo', disconnect, body_complete=False)
+    assert _outcomes(caplog) == ["outcome=client_closed"]
+    assert [r for r in caplog.records if r.levelno >= logging.ERROR] == []
+
+
+async def test_no_disconnect_returns_200() -> None:
+    chat = BlockingChat()
+    chat.release.set()
+    app = _blocking_app()
+    with anyio.fail_after(5):
+        async with app.router.lifespan_context(app):
+            _swap_in(app, chat)
+            messages = await _asgi_post(app, BODY, asyncio.Event())
+    assert _status(messages) == 200
+
+
+async def test_no_disconnect_keeps_runtime_error_code() -> None:
+    chat = BlockingChat(errors=[LlmTimeoutError("x")])
+    app = _blocking_app()
+    with anyio.fail_after(5):
+        async with app.router.lifespan_context(app):
+            _swap_in(app, chat)
+            messages = await _asgi_post(app, BODY, asyncio.Event())
+    assert _status(messages) == 504
