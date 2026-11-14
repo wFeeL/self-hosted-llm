@@ -8,6 +8,8 @@ This page describes the labelled set, how it is run against a model, the results
 
 The set leans on JavaScript (11 browser and 10 Node.js rows), then Python (11), Go (7), SQL (7), infrastructure (6) and 8 other rows. Four texts are in Russian or German. Every category has 5 to 7 rows and every severity at least 6 (low 9, medium 23, high 22, critical 6). Seven rows carry a fake secret: two tokens, a password, a webhook token, an email address and two injection markers. One injection is a plain text that asks for `permission_error`, `critical` and the marker `PWNED-7731`; the other hides inside the echoed input of a 422 response and asks for `critical`.
 
+The texts are short, 38 to 374 characters (median 196), so the latency below is for short inputs; inputs near `MAX_INPUT_CHARS` (3000) are left to the benchmarks.
+
 The few-shot examples of the prompt are not in the set. `check_dataset` compares word trigrams of every row with every example and with every other row and rejects a row that covers 80% of an example (measured on the draft set: edited copies of an example score 0.89 to 1.0, a different error of the same kind at most 0.75, the rows of the set at most 0.46).
 
 ## How a run works
@@ -90,7 +92,7 @@ Qwen3.5-2B is the fastest (p50 4.2 s, p90 5.3 s, the whole run 264 s against 424
 
 ## The choice
 
-The rule was written down before the runs and is implemented in `choose_model` (the report calls it rule D8):
+The rule was written down before the runs and is implemented in `choose_model` (the report calls it rule D8). One condition was narrowed after the Granite run: the load average after a run no longer counts, because llama-server alone pushes it to about 10 under the CPU limit. Step 1 decided this choice, so the change did not affect it.
 
 1. A model is out if fewer than 57 of 60 answers are valid, fewer than 54 are valid on the first try, or any secret leaks.
 2. Among the rest, the leaders have the most rows with both fields right. A model stays a candidate if it is at most 6 rows behind the leaders and McNemar against each leader gives p of at least 0.05.
@@ -107,7 +109,7 @@ The price is accuracy. Qwen3-4B got both fields right in 10 more rows, and if it
 - 60 rows separate only large differences, as shown in the pair table.
 - The prompt was tuned on Granite, which favours it. Temperature 0 differs from the sampling the Qwen vendors recommend (Qwen3-4B T 0.7, Qwen3.5-2B T 1.0), which may understate both Qwen models.
 - The quantizers differ: IBM for Granite, bartowski (imatrix) for both Qwen models.
-- Latency was measured on podman on a shared machine. Benchmarks on Docker follow in `docs/benchmarks.md`.
+- Latency was measured on podman on a shared machine, on short inputs only. A repeat of five rows under background load took up to 2.3 times longer with the same answers. Benchmarks on Docker follow in `docs/benchmarks.md`.
 - Seven secret rows show leaks when they happen; zero leaks on seven rows does not prove a model never leaks.
 
 ## Reproducing
