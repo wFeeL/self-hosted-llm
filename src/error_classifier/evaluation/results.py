@@ -35,7 +35,6 @@ RUNTIME_ENV: Final[tuple[str, ...]] = (
     "LLAMA_ARG_CHAT_TEMPLATE_KWARGS",
     "LLAMA_ARG_MMPROJ_AUTO",
 )
-DEFAULT_THREADS: Final = 6
 
 
 class _Model(BaseModel):
@@ -163,19 +162,11 @@ def read_result(path: Path) -> ResultDoc:
     return ResultDoc.model_validate_json(path.read_text(encoding="utf-8"))
 
 
-def _threads(env: dict[str, str]) -> int:
-    try:
-        return int(env["LLAMA_ARG_THREADS"])
-    except KeyError, ValueError:
-        return DEFAULT_THREADS
-
-
 def model_run(doc: ResultDoc, items: Sequence[EvalItem]) -> ModelRun:
     meta = doc.meta
-    before, after = meta.loadavg_before, meta.loadavg_after
-    loaded = (before is not None and before[0] >= LOAD_LIMIT) or (
-        after is not None and after[0] >= _threads(meta.runtime_env) + LOAD_LIMIT
-    )
+    # llama-server's own load after the run is about 10, so only the start counts.
+    before = meta.loadavg_before
+    loaded = before is not None and before[0] >= LOAD_LIMIT
     rows = score_rows(items[: len(doc.items)], doc.items)
     return ModelRun(meta.model, doc.summary, rows, loaded)
 
