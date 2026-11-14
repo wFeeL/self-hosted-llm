@@ -1,0 +1,1437 @@
+{
+  "format": 1,
+  "meta": {
+    "model": "qwen3.5-2b-q4km",
+    "engine": "podman",
+    "container": "llm-error-classifier_llm_1",
+    "runtime_env": {
+      "LLAMA_ARG_MMPROJ_AUTO": "off",
+      "LLAMA_ARG_CTX_SIZE": "8192",
+      "LLAMA_ARG_HF_REPO": "bartowski/Qwen_Qwen3.5-2B-GGUF",
+      "LLAMA_ARG_ALIAS": "qwen3.5-2b-q4km",
+      "LLAMA_ARG_HF_FILE": "Qwen_Qwen3.5-2B-Q4_K_M.gguf",
+      "LLAMA_ARG_THREADS": "6",
+      "LLAMA_ARG_BATCH": "512",
+      "LLAMA_ARG_N_PARALLEL": "2"
+    },
+    "runtime_build": "b12352-5676dfbe0",
+    "model_path": "/models/models--bartowski--Qwen_Qwen3.5-2B-GGUF/snapshots/7d26695454df6de5fbcce2e58681e62dae06ce43/Qwen_Qwen3.5-2B-Q4_K_M.gguf",
+    "total_slots": 2,
+    "slot_ctx": 4096,
+    "settings": {
+      "temperature": 0.0,
+      "max_output_tokens": 256,
+      "max_input_chars": 3000,
+      "request_timeout_s": 120.0,
+      "disable_thinking": true
+    },
+    "dataset_sha256": "f1587b1d239a590bf2eae675bd413fa96b9ff6200e6ceb07069da8c75913cc10",
+    "prompt_sha256": "0dd4b7c30cecdc9e06296c61db4f79f1720b4417ca447a969775d34c2626a113",
+    "git_sha": "dedad132c22c38092fccc2515142a7d6dac24816",
+    "git_dirty": true,
+    "started_at": "2026-11-14T23:03:03Z",
+    "wall_s": 263.8,
+    "loadavg_before": [
+      1.49,
+      3.39,
+      4.92
+    ],
+    "loadavg_after": [
+      6.96,
+      5.67,
+      5.53
+    ],
+    "complete": true,
+    "stop_reason": null,
+    "cpu_count": 8,
+    "machine": "x86_64"
+  },
+  "summary": {
+    "items": 60,
+    "ok": 60,
+    "valid_first_attempt": 60,
+    "category_correct": 52,
+    "category_strict_correct": 46,
+    "severity_correct": 27,
+    "severity_within_one": 56,
+    "both_correct": 24,
+    "english": 60,
+    "text_within_limits": 60,
+    "truncated": 0,
+    "secret_ok_items": 7,
+    "leaks": 0,
+    "latency_n": 60,
+    "latency_p50_ms": 4176,
+    "latency_p90_ms": 5350,
+    "latency_max_ms": 8712,
+    "mean_prompt_tokens": 1148.3,
+    "mean_completion_tokens": 58.4,
+    "outcomes": {
+      "ok": 60
+    },
+    "per_category": {
+      "syntax_error": {
+        "items": 5,
+        "correct": 5
+      },
+      "runtime_error": {
+        "items": 6,
+        "correct": 6
+      },
+      "validation_error": {
+        "items": 6,
+        "correct": 6
+      },
+      "network_error": {
+        "items": 6,
+        "correct": 6
+      },
+      "database_error": {
+        "items": 6,
+        "correct": 6
+      },
+      "dependency_error": {
+        "items": 5,
+        "correct": 4
+      },
+      "configuration_error": {
+        "items": 7,
+        "correct": 6
+      },
+      "resource_error": {
+        "items": 7,
+        "correct": 4
+      },
+      "permission_error": {
+        "items": 7,
+        "correct": 4
+      },
+      "unknown": {
+        "items": 5,
+        "correct": 5
+      }
+    }
+  },
+  "items": [
+    {
+      "id": "js-001",
+      "outcome": "ok",
+      "attempts": 1,
+      "latency_ms": 3657,
+      "truncated": false,
+      "prompt_tokens": 1123,
+      "completion_tokens": 58,
+      "category": "runtime_error",
+      "severity": "medium",
+      "summary": "The renderProducts function tries to call map on undefined, causing a crash during catalog rendering.",
+      "suggested_action": "Check the catalog.js file at line 42 to ensure the data source is properly initialized before calling map.",
+      "attempt_log": [
+        {
+          "content": "{\"category\":\"runtime_error\",\"severity\":\"medium\",\"summary\":\"The renderProducts function tries to call map on undefined, causing a crash during catalog rendering.\",\"suggested_action\":\"Check the catalog.js file at line 42 to ensure the data source is properly initialized before calling map.\"}",
+          "finish_reason": "stop",
+          "prompt_tokens": 1123,
+          "completion_tokens": 58,
+          "error": null
+        }
+      ]
+    },
+    {
+      "id": "js-002",
+      "outcome": "ok",
+      "attempts": 1,
+      "latency_ms": 3854,
+      "truncated": false,
+      "prompt_tokens": 1135,
+      "completion_tokens": 61,
+      "category": "runtime_error",
+      "severity": "medium",
+      "summary": "The script fails to execute the analytics function because the gtag library is not loaded or defined.",
+      "suggested_action": "Check if the analytics.js file is included in the bundle and verify that the gtag library is properly imported or referenced.",
+      "attempt_log": [
+        {
+          "content": "{\"category\":\"runtime_error\",\"severity\":\"medium\",\"summary\":\"The script fails to execute the analytics function because the gtag library is not loaded or defined.\",\"suggested_action\":\"Check if the analytics.js file is included in the bundle and verify that the gtag library is properly imported or referenced.\"}",
+          "finish_reason": "stop",
+          "prompt_tokens": 1135,
+          "completion_tokens": 61,
+          "error": null
+        }
+      ]
+    },
+    {
+      "id": "js-003",
+      "outcome": "ok",
+      "attempts": 1,
+      "latency_ms": 3721,
+      "truncated": false,
+      "prompt_tokens": 1163,
+      "completion_tokens": 53,
+      "category": "network_error",
+      "severity": "high",
+      "summary": "CORS policy blocked the fetch request to the API endpoint, causing a failed network call.",
+      "suggested_action": "Check the server's CORS configuration headers and ensure they match the client's expected origin.",
+      "attempt_log": [
+        {
+          "content": "{\"category\":\"network_error\",\"severity\":\"high\",\"summary\":\"CORS policy blocked the fetch request to the API endpoint, causing a failed network call.\",\"suggested_action\":\"Check the server's CORS configuration headers and ensure they match the client's expected origin.\"}",
+          "finish_reason": "stop",
+          "prompt_tokens": 1163,
+          "completion_tokens": 53,
+          "error": null
+        }
+      ]
+    },
+    {
+      "id": "js-005",
+      "outcome": "ok",
+      "attempts": 1,
+      "latency_ms": 4274,
+      "truncated": false,
+      "prompt_tokens": 1142,
+      "completion_tokens": 69,
+      "category": "syntax_error",
+      "severity": "high",
+      "summary": "The JavaScript parser encountered an unexpected token '<' in the reports chunk, causing the chunk to fail load.",
+      "suggested_action": "Check the source code around line 1 in reports.7c1e9a.chunk.js to ensure the opening tag is valid and properly escaped.",
+      "attempt_log": [
+        {
+          "content": "{\"category\":\"syntax_error\",\"severity\":\"high\",\"summary\":\"The JavaScript parser encountered an unexpected token '<' in the reports chunk, causing the chunk to fail load.\",\"suggested_action\":\"Check the source code around line 1 in reports.7c1e9a.chunk.js to ensure the opening tag is valid and properly escaped.\"}",
+          "finish_reason": "stop",
+          "prompt_tokens": 1142,
+          "completion_tokens": 69,
+          "error": null
+        }
+      ]
+    },
+    {
+      "id": "js-006",
+      "outcome": "ok",
+      "attempts": 1,
+      "latency_ms": 3600,
+      "truncated": false,
+      "prompt_tokens": 1159,
+      "completion_tokens": 51,
+      "category": "validation_error",
+      "severity": "high",
+      "summary": "The signup request failed because the email field contains invalid characters, blocking user registration.",
+      "suggested_action": "Verify the email input format and ensure the validation logic rejects non-standard characters before submission.",
+      "attempt_log": [
+        {
+          "content": "{\"category\":\"validation_error\",\"severity\":\"high\",\"summary\":\"The signup request failed because the email field contains invalid characters, blocking user registration.\",\"suggested_action\":\"Verify the email input format and ensure the validation logic rejects non-standard characters before submission.\"}",
+          "finish_reason": "stop",
+          "prompt_tokens": 1159,
+          "completion_tokens": 51,
+          "error": null
+        }
+      ]
+    },
+    {
+      "id": "js-007",
+      "outcome": "ok",
+      "attempts": 1,
+      "latency_ms": 4196,
+      "truncated": false,
+      "prompt_tokens": 1145,
+      "completion_tokens": 58,
+      "category": "network_error",
+      "severity": "high",
+      "summary": "The API endpoint returned a 403 Forbidden status, blocking access to the admin reports feature.",
+      "suggested_action": "Verify the admin token or permissions and check if the endpoint is correctly configured to allow the current user.",
+      "attempt_log": [
+        {
+          "content": "{\"category\":\"network_error\",\"severity\":\"high\",\"summary\":\"The API endpoint returned a 403 Forbidden status, blocking access to the admin reports feature.\",\"suggested_action\":\"Verify the admin token or permissions and check if the endpoint is correctly configured to allow the current user.\"}",
+          "finish_reason": "stop",
+          "prompt_tokens": 1145,
+          "completion_tokens": 58,
+          "error": null
+        }
+      ]
+    },
+    {
+      "id": "js-008",
+      "outcome": "ok",
+      "attempts": 1,
+      "latency_ms": 5127,
+      "truncated": false,
+      "prompt_tokens": 1155,
+      "completion_tokens": 58,
+      "category": "runtime_error",
+      "severity": "high",
+      "summary": "The recursive tree flattening function is stuck in an infinite loop, causing the call stack to overflow.",
+      "suggested_action": "Investigate the logic in tree-utils.js to prevent infinite recursion, as this will crash the application.",
+      "attempt_log": [
+        {
+          "content": "{\"category\":\"runtime_error\",\"severity\":\"high\",\"summary\":\"The recursive tree flattening function is stuck in an infinite loop, causing the call stack to overflow.\",\"suggested_action\":\"Investigate the logic in tree-utils.js to prevent infinite recursion, as this will crash the application.\"}",
+          "finish_reason": "stop",
+          "prompt_tokens": 1155,
+          "completion_tokens": 58,
+          "error": null
+        }
+      ]
+    },
+    {
+      "id": "js-009",
+      "outcome": "ok",
+      "attempts": 1,
+      "latency_ms": 5545,
+      "truncated": false,
+      "prompt_tokens": 1133,
+      "completion_tokens": 66,
+      "category": "network_error",
+      "severity": "high",
+      "summary": "The API request to refresh comments failed due to a connection reset, causing the refresh to fail.",
+      "suggested_action": "Check the network tab in the browser to see if the server is down or if there is a firewall blocking the connection, then retry the refresh.",
+      "attempt_log": [
+        {
+          "content": "{\"category\":\"network_error\",\"severity\":\"high\",\"summary\":\"The API request to refresh comments failed due to a connection reset, causing the refresh to fail.\",\"suggested_action\":\"Check the network tab in the browser to see if the server is down or if there is a firewall blocking the connection, then retry the refresh.\"}",
+          "finish_reason": "stop",
+          "prompt_tokens": 1133,
+          "completion_tokens": 66,
+          "error": null
+        }
+      ]
+    },
+    {
+      "id": "js-010",
+      "outcome": "ok",
+      "attempts": 1,
+      "latency_ms": 4573,
+      "truncated": false,
+      "prompt_tokens": 1120,
+      "completion_tokens": 67,
+      "category": "dependency_error",
+      "severity": "high",
+      "summary": "The application cannot load the lodash module due to incorrect relative path syntax in app.js.",
+      "suggested_action": "Fix the import path in app.js to use a valid relative path (e.g., './lodash' or 'lodash-es') and ensure the module is installed.",
+      "attempt_log": [
+        {
+          "content": "{\"category\":\"dependency_error\",\"severity\":\"high\",\"summary\":\"The application cannot load the lodash module due to incorrect relative path syntax in app.js.\",\"suggested_action\":\"Fix the import path in app.js to use a valid relative path (e.g., './lodash' or 'lodash-es') and ensure the module is installed.\"}",
+          "finish_reason": "stop",
+          "prompt_tokens": 1120,
+          "completion_tokens": 67,
+          "error": null
+        }
+      ]
+    },
+    {
+      "id": "js-012",
+      "outcome": "ok",
+      "attempts": 1,
+      "latency_ms": 4418,
+      "truncated": false,
+      "prompt_tokens": 1126,
+      "completion_tokens": 57,
+      "category": "resource_error",
+      "severity": "high",
+      "summary": "The storage quota for the editor-drafts key has been exceeded, preventing the save operation.",
+      "suggested_action": "Check the storage quota limits configured for the editor and consider archiving old drafts to free up space.",
+      "attempt_log": [
+        {
+          "content": "{\"category\":\"resource_error\",\"severity\":\"high\",\"summary\":\"The storage quota for the editor-drafts key has been exceeded, preventing the save operation.\",\"suggested_action\":\"Check the storage quota limits configured for the editor and consider archiving old drafts to free up space.\"}",
+          "finish_reason": "stop",
+          "prompt_tokens": 1126,
+          "completion_tokens": 57,
+          "error": null
+        }
+      ]
+    },
+    {
+      "id": "js-013",
+      "outcome": "ok",
+      "attempts": 1,
+      "latency_ms": 3548,
+      "truncated": false,
+      "prompt_tokens": 1142,
+      "completion_tokens": 53,
+      "category": "permission_error",
+      "severity": "high",
+      "summary": "The API returned a 401 Unauthorized error because the access token has expired.",
+      "suggested_action": "Refresh the access token or re-authenticate the client to restore access to the API endpoint.",
+      "attempt_log": [
+        {
+          "content": "{\"category\":\"permission_error\",\"severity\":\"high\",\"summary\":\"The API returned a 401 Unauthorized error because the access token has expired.\",\"suggested_action\":\"Refresh the access token or re-authenticate the client to restore access to the API endpoint.\"}",
+          "finish_reason": "stop",
+          "prompt_tokens": 1142,
+          "completion_tokens": 53,
+          "error": null
+        }
+      ]
+    },
+    {
+      "id": "node-001",
+      "outcome": "ok",
+      "attempts": 1,
+      "latency_ms": 3697,
+      "truncated": false,
+      "prompt_tokens": 1151,
+      "completion_tokens": 56,
+      "category": "network_error",
+      "severity": "high",
+      "summary": "Redis connection refused, causing login failures for the application.",
+      "suggested_action": "Check network connectivity to 10.0.2.15:6379 and verify Redis is running and accessible.",
+      "attempt_log": [
+        {
+          "content": "{\"category\":\"network_error\",\"severity\":\"high\",\"summary\":\"Redis connection refused, causing login failures for the application.\",\"suggested_action\":\"Check network connectivity to 10.0.2.15:6379 and verify Redis is running and accessible.\"}",
+          "finish_reason": "stop",
+          "prompt_tokens": 1151,
+          "completion_tokens": 56,
+          "error": null
+        }
+      ]
+    },
+    {
+      "id": "node-002",
+      "outcome": "ok",
+      "attempts": 1,
+      "latency_ms": 5350,
+      "truncated": false,
+      "prompt_tokens": 1218,
+      "completion_tokens": 55,
+      "category": "runtime_error",
+      "severity": "critical",
+      "summary": "The application ran out of heap memory during GC, causing the process to crash and restart.",
+      "suggested_action": "Increase the heap size limit in the process configuration or restart the application with a larger memory allocation.",
+      "attempt_log": [
+        {
+          "content": "{\"category\":\"runtime_error\",\"severity\":\"critical\",\"summary\":\"The application ran out of heap memory during GC, causing the process to crash and restart.\",\"suggested_action\":\"Increase the heap size limit in the process configuration or restart the application with a larger memory allocation.\"}",
+          "finish_reason": "stop",
+          "prompt_tokens": 1218,
+          "completion_tokens": 55,
+          "error": null
+        }
+      ]
+    },
+    {
+      "id": "node-003",
+      "outcome": "ok",
+      "attempts": 1,
+      "latency_ms": 5242,
+      "truncated": false,
+      "prompt_tokens": 1179,
+      "completion_tokens": 58,
+      "category": "dependency_error",
+      "severity": "critical",
+      "summary": "The application cannot find the 'express' module, causing the server to fail startup and go down.",
+      "suggested_action": "Install the missing 'express' package and verify the module path in server.js matches the installed version.",
+      "attempt_log": [
+        {
+          "content": "{\"category\":\"dependency_error\",\"severity\":\"critical\",\"summary\":\"The application cannot find the 'express' module, causing the server to fail startup and go down.\",\"suggested_action\":\"Install the missing 'express' package and verify the module path in server.js matches the installed version.\"}",
+          "finish_reason": "stop",
+          "prompt_tokens": 1179,
+          "completion_tokens": 58,
+          "error": null
+        }
+      ]
+    },
+    {
+      "id": "node-004",
+      "outcome": "ok",
+      "attempts": 1,
+      "latency_ms": 3848,
+      "truncated": false,
+      "prompt_tokens": 1142,
+      "completion_tokens": 59,
+      "category": "syntax_error",
+      "severity": "critical",
+      "summary": "The JavaScript file has a syntax error preventing the app from compiling, causing the server to crash.",
+      "suggested_action": "Fix the syntax error in routes.js (likely a missing closing brace or parenthesis) and restart the development server.",
+      "attempt_log": [
+        {
+          "content": "{\"category\":\"syntax_error\",\"severity\":\"critical\",\"summary\":\"The JavaScript file has a syntax error preventing the app from compiling, causing the server to crash.\",\"suggested_action\":\"Fix the syntax error in routes.js (likely a missing closing brace or parenthesis) and restart the development server.\"}",
+          "finish_reason": "stop",
+          "prompt_tokens": 1142,
+          "completion_tokens": 59,
+          "error": null
+        }
+      ]
+    },
+    {
+      "id": "node-005",
+      "outcome": "ok",
+      "attempts": 1,
+      "latency_ms": 6186,
+      "truncated": false,
+      "prompt_tokens": 1141,
+      "completion_tokens": 68,
+      "category": "network_error",
+      "severity": "critical",
+      "summary": "The application failed to bind to port 3000 because the address is already in use, causing the service to fail startup.",
+      "suggested_action": "Identify and kill any process currently listening on port 3000, then restart the checkout-service instance.",
+      "attempt_log": [
+        {
+          "content": "{\"category\":\"network_error\",\"severity\":\"critical\",\"summary\":\"The application failed to bind to port 3000 because the address is already in use, causing the service to fail startup.\",\"suggested_action\":\"Identify and kill any process currently listening on port 3000, then restart the checkout-service instance.\"}",
+          "finish_reason": "stop",
+          "prompt_tokens": 1141,
+          "completion_tokens": 68,
+          "error": null
+        }
+      ]
+    },
+    {
+      "id": "node-006",
+      "outcome": "ok",
+      "attempts": 1,
+      "latency_ms": 4423,
+      "truncated": false,
+      "prompt_tokens": 1131,
+      "completion_tokens": 57,
+      "category": "configuration_error",
+      "severity": "high",
+      "summary": "The application failed to start because the required environment variable PAYMENT_PROVIDER_URL is missing.",
+      "suggested_action": "Set the PAYMENT_PROVIDER_URL environment variable before running the application or check the configuration file for the correct value.",
+      "attempt_log": [
+        {
+          "content": "{\"category\":\"configuration_error\",\"severity\":\"high\",\"summary\":\"The application failed to start because the required environment variable PAYMENT_PROVIDER_URL is missing.\",\"suggested_action\":\"Set the PAYMENT_PROVIDER_URL environment variable before running the application or check the configuration file for the correct value.\"}",
+          "finish_reason": "stop",
+          "prompt_tokens": 1131,
+          "completion_tokens": 57,
+          "error": null
+        }
+      ]
+    },
+    {
+      "id": "node-007",
+      "outcome": "ok",
+      "attempts": 1,
+      "latency_ms": 8712,
+      "truncated": false,
+      "prompt_tokens": 1164,
+      "completion_tokens": 67,
+      "category": "validation_error",
+      "severity": "high",
+      "summary": "The import job rejected 37 rows due to invalid data types (strings instead of numbers) in the quantity field.",
+      "suggested_action": "Review the data source for the 37 rejected rows and ensure the quantity field is populated as numbers before re-importing.",
+      "attempt_log": [
+        {
+          "content": "{\"category\":\"validation_error\",\"severity\":\"high\",\"summary\":\"The import job rejected 37 rows due to invalid data types (strings instead of numbers) in the quantity field.\",\"suggested_action\":\"Review the data source for the 37 rejected rows and ensure the quantity field is populated as numbers before re-importing.\"}",
+          "finish_reason": "stop",
+          "prompt_tokens": 1164,
+          "completion_tokens": 67,
+          "error": null
+        }
+      ]
+    },
+    {
+      "id": "node-008",
+      "outcome": "ok",
+      "attempts": 1,
+      "latency_ms": 3745,
+      "truncated": false,
+      "prompt_tokens": 1150,
+      "completion_tokens": 55,
+      "category": "dependency_error",
+      "severity": "high",
+      "summary": "The payment client failed to authenticate due to an invalid API key, causing checkout failures.",
+      "suggested_action": "Verify the API key configuration in the environment variables and ensure the client library is using the correct credentials.",
+      "attempt_log": [
+        {
+          "content": "{\"category\":\"dependency_error\",\"severity\":\"high\",\"summary\":\"The payment client failed to authenticate due to an invalid API key, causing checkout failures.\",\"suggested_action\":\"Verify the API key configuration in the environment variables and ensure the client library is using the correct credentials.\"}",
+          "finish_reason": "stop",
+          "prompt_tokens": 1150,
+          "completion_tokens": 55,
+          "error": null
+        }
+      ]
+    },
+    {
+      "id": "node-009",
+      "outcome": "ok",
+      "attempts": 1,
+      "latency_ms": 3931,
+      "truncated": false,
+      "prompt_tokens": 1134,
+      "completion_tokens": 59,
+      "category": "database_error",
+      "severity": "high",
+      "summary": "A database constraint violation occurred during a Prisma database operation, preventing user creation.",
+      "suggested_action": "Review the database schema to ensure the `email` field is not already unique, then run the migration to apply the constraint.",
+      "attempt_log": [
+        {
+          "content": "{\"category\":\"database_error\",\"severity\":\"high\",\"summary\":\"A database constraint violation occurred during a Prisma database operation, preventing user creation.\",\"suggested_action\":\"Review the database schema to ensure the `email` field is not already unique, then run the migration to apply the constraint.\"}",
+          "finish_reason": "stop",
+          "prompt_tokens": 1134,
+          "completion_tokens": 59,
+          "error": null
+        }
+      ]
+    },
+    {
+      "id": "node-010",
+      "outcome": "ok",
+      "attempts": 1,
+      "latency_ms": 4146,
+      "truncated": false,
+      "prompt_tokens": 1148,
+      "completion_tokens": 56,
+      "category": "network_error",
+      "severity": "high",
+      "summary": "The payment API request failed due to a connection reset, indicating a network instability issue.",
+      "suggested_action": "Check the network connectivity between the client and the payment gateway, and verify if the upstream service is responding.",
+      "attempt_log": [
+        {
+          "content": "{\"category\":\"network_error\",\"severity\":\"high\",\"summary\":\"The payment API request failed due to a connection reset, indicating a network instability issue.\",\"suggested_action\":\"Check the network connectivity between the client and the payment gateway, and verify if the upstream service is responding.\"}",
+          "finish_reason": "stop",
+          "prompt_tokens": 1148,
+          "completion_tokens": 56,
+          "error": null
+        }
+      ]
+    },
+    {
+      "id": "py-001",
+      "outcome": "ok",
+      "attempts": 1,
+      "latency_ms": 4422,
+      "truncated": false,
+      "prompt_tokens": 1198,
+      "completion_tokens": 60,
+      "category": "runtime_error",
+      "severity": "high",
+      "summary": "A calculation failed because a line in the invoice has no price, causing a TypeError during summation.",
+      "suggested_action": "Check the invoice data source to ensure all lines have valid prices before processing, then fix the missing price field.",
+      "attempt_log": [
+        {
+          "content": "{\"category\":\"runtime_error\",\"severity\":\"high\",\"summary\":\"A calculation failed because a line in the invoice has no price, causing a TypeError during summation.\",\"suggested_action\":\"Check the invoice data source to ensure all lines have valid prices before processing, then fix the missing price field.\"}",
+          "finish_reason": "stop",
+          "prompt_tokens": 1198,
+          "completion_tokens": 60,
+          "error": null
+        }
+      ]
+    },
+    {
+      "id": "py-003",
+      "outcome": "ok",
+      "attempts": 1,
+      "latency_ms": 4332,
+      "truncated": false,
+      "prompt_tokens": 1187,
+      "completion_tokens": 63,
+      "category": "syntax_error",
+      "severity": "high",
+      "summary": "A required import for Flask's Jinja2 template engine is missing, causing the application to fail at startup.",
+      "suggested_action": "Install the missing 'jinja2' package or verify the import path in wsgi.py to resolve the ImportError.",
+      "attempt_log": [
+        {
+          "content": "{\"category\":\"syntax_error\",\"severity\":\"high\",\"summary\":\"A required import for Flask's Jinja2 template engine is missing, causing the application to fail at startup.\",\"suggested_action\":\"Install the missing 'jinja2' package or verify the import path in wsgi.py to resolve the ImportError.\"}",
+          "finish_reason": "stop",
+          "prompt_tokens": 1187,
+          "completion_tokens": 63,
+          "error": null
+        }
+      ]
+    },
+    {
+      "id": "py-004",
+      "outcome": "ok",
+      "attempts": 1,
+      "latency_ms": 4234,
+      "truncated": false,
+      "prompt_tokens": 1157,
+      "completion_tokens": 65,
+      "category": "database_error",
+      "severity": "high",
+      "summary": "Database connection pool is exhausted due to reserved slots for non-replication superusers, causing request failures.",
+      "suggested_action": "Check the database configuration to ensure no non-replication superuser connections are blocking the pool, then restart the application or adjust connection limits.",
+      "attempt_log": [
+        {
+          "content": "{\"category\":\"database_error\",\"severity\":\"high\",\"summary\":\"Database connection pool is exhausted due to reserved slots for non-replication superusers, causing request failures.\",\"suggested_action\":\"Check the database configuration to ensure no non-replication superuser connections are blocking the pool, then restart the application or adjust connection limits.\"}",
+          "finish_reason": "stop",
+          "prompt_tokens": 1157,
+          "completion_tokens": 65,
+          "error": null
+        }
+      ]
+    },
+    {
+      "id": "py-005",
+      "outcome": "ok",
+      "attempts": 1,
+      "latency_ms": 3774,
+      "truncated": false,
+      "prompt_tokens": 1145,
+      "completion_tokens": 60,
+      "category": "database_error",
+      "severity": "high",
+      "summary": "The database schema is missing the 'discount_code' column in the orders_order table, causing requests to fail.",
+      "suggested_action": "Run the database migration to add the missing column or update the application code to use the existing column.",
+      "attempt_log": [
+        {
+          "content": "{\"category\":\"database_error\",\"severity\":\"high\",\"summary\":\"The database schema is missing the 'discount_code' column in the orders_order table, causing requests to fail.\",\"suggested_action\":\"Run the database migration to add the missing column or update the application code to use the existing column.\"}",
+          "finish_reason": "stop",
+          "prompt_tokens": 1145,
+          "completion_tokens": 60,
+          "error": null
+        }
+      ]
+    },
+    {
+      "id": "py-006",
+      "outcome": "ok",
+      "attempts": 1,
+      "latency_ms": 5136,
+      "truncated": false,
+      "prompt_tokens": 1159,
+      "completion_tokens": 68,
+      "category": "validation_error",
+      "severity": "high",
+      "summary": "The input value '12.50' is not a valid integer, causing the WebhookEvent to fail validation.",
+      "suggested_action": "Ensure the payload sent to the webhook contains an integer for the 'amount' field, or update the schema to accept floats.",
+      "attempt_log": [
+        {
+          "content": "{\"category\":\"validation_error\",\"severity\":\"high\",\"summary\":\"The input value '12.50' is not a valid integer, causing the WebhookEvent to fail validation.\",\"suggested_action\":\"Ensure the payload sent to the webhook contains an integer for the 'amount' field, or update the schema to accept floats.\"}",
+          "finish_reason": "stop",
+          "prompt_tokens": 1159,
+          "completion_tokens": 68,
+          "error": null
+        }
+      ]
+    },
+    {
+      "id": "py-007",
+      "outcome": "ok",
+      "attempts": 1,
+      "latency_ms": 5925,
+      "truncated": false,
+      "prompt_tokens": 1184,
+      "completion_tokens": 66,
+      "category": "runtime_error",
+      "severity": "high",
+      "summary": "The ETL job failed due to a memory allocation error when processing a large dataset, causing the nightly report to fail.",
+      "suggested_action": "Check the input data size and column types; consider reducing the dataset size or optimizing the data type to fit memory limits.",
+      "attempt_log": [
+        {
+          "content": "{\"category\":\"runtime_error\",\"severity\":\"high\",\"summary\":\"The ETL job failed due to a memory allocation error when processing a large dataset, causing the nightly report to fail.\",\"suggested_action\":\"Check the input data size and column types; consider reducing the dataset size or optimizing the data type to fit memory limits.\"}",
+          "finish_reason": "stop",
+          "prompt_tokens": 1184,
+          "completion_tokens": 66,
+          "error": null
+        }
+      ]
+    },
+    {
+      "id": "py-008",
+      "outcome": "ok",
+      "attempts": 1,
+      "latency_ms": 5379,
+      "truncated": false,
+      "prompt_tokens": 1179,
+      "completion_tokens": 61,
+      "category": "permission_error",
+      "severity": "critical",
+      "summary": "The application lacks permission to write to the log file, causing email workers to stop.",
+      "suggested_action": "Fix file permissions on /var/log/app/worker.log to allow the running process to write logs, then restart the email workers.",
+      "attempt_log": [
+        {
+          "content": "{\"category\":\"permission_error\",\"severity\":\"critical\",\"summary\":\"The application lacks permission to write to the log file, causing email workers to stop.\",\"suggested_action\":\"Fix file permissions on /var/log/app/worker.log to allow the running process to write logs, then restart the email workers.\"}",
+          "finish_reason": "stop",
+          "prompt_tokens": 1179,
+          "completion_tokens": 61,
+          "error": null
+        }
+      ]
+    },
+    {
+      "id": "py-009",
+      "outcome": "ok",
+      "attempts": 1,
+      "latency_ms": 6761,
+      "truncated": false,
+      "prompt_tokens": 1126,
+      "completion_tokens": 54,
+      "category": "syntax_error",
+      "severity": "high",
+      "summary": "The Python file has unclosed parentheses causing a syntax error during task import.",
+      "suggested_action": "Fix the syntax error in tasks.py by closing the parenthesis and re-run the worker to import the tasks.",
+      "attempt_log": [
+        {
+          "content": "{\"category\":\"syntax_error\",\"severity\":\"high\",\"summary\":\"The Python file has unclosed parentheses causing a syntax error during task import.\",\"suggested_action\":\"Fix the syntax error in tasks.py by closing the parenthesis and re-run the worker to import the tasks.\"}",
+          "finish_reason": "stop",
+          "prompt_tokens": 1126,
+          "completion_tokens": 54,
+          "error": null
+        }
+      ]
+    },
+    {
+      "id": "py-010",
+      "outcome": "ok",
+      "attempts": 1,
+      "latency_ms": 3639,
+      "truncated": false,
+      "prompt_tokens": 1133,
+      "completion_tokens": 55,
+      "category": "configuration_error",
+      "severity": "critical",
+      "summary": "The SECRET_KEY is missing, causing the application to fail startup and return 502 errors.",
+      "suggested_action": "Set the SECRET_KEY environment variable immediately and restart the application to resolve the startup failure.",
+      "attempt_log": [
+        {
+          "content": "{\"category\":\"configuration_error\",\"severity\":\"critical\",\"summary\":\"The SECRET_KEY is missing, causing the application to fail startup and return 502 errors.\",\"suggested_action\":\"Set the SECRET_KEY environment variable immediately and restart the application to resolve the startup failure.\"}",
+          "finish_reason": "stop",
+          "prompt_tokens": 1133,
+          "completion_tokens": 55,
+          "error": null
+        }
+      ]
+    },
+    {
+      "id": "py-011",
+      "outcome": "ok",
+      "attempts": 1,
+      "latency_ms": 4126,
+      "truncated": false,
+      "prompt_tokens": 1187,
+      "completion_tokens": 54,
+      "category": "network_error",
+      "severity": "high",
+      "summary": "The webhook service failed to connect to the chat endpoint due to a network unreachable error.",
+      "suggested_action": "Check network connectivity to the chat.example domain and verify firewall rules blocking port 443.",
+      "attempt_log": [
+        {
+          "content": "{\"category\":\"network_error\",\"severity\":\"high\",\"summary\":\"The webhook service failed to connect to the chat endpoint due to a network unreachable error.\",\"suggested_action\":\"Check network connectivity to the chat.example domain and verify firewall rules blocking port 443.\"}",
+          "finish_reason": "stop",
+          "prompt_tokens": 1187,
+          "completion_tokens": 54,
+          "error": null
+        }
+      ]
+    },
+    {
+      "id": "py-012",
+      "outcome": "ok",
+      "attempts": 1,
+      "latency_ms": 4496,
+      "truncated": false,
+      "prompt_tokens": 1141,
+      "completion_tokens": 55,
+      "category": "network_error",
+      "severity": "high",
+      "summary": "The SMTP server rejected the recipient address, causing the password reset email to fail.",
+      "suggested_action": "Verify the recipient email address and check if the user account exists in the mail server's virtual mailbox table.",
+      "attempt_log": [
+        {
+          "content": "{\"category\":\"network_error\",\"severity\":\"high\",\"summary\":\"The SMTP server rejected the recipient address, causing the password reset email to fail.\",\"suggested_action\":\"Verify the recipient email address and check if the user account exists in the mail server's virtual mailbox table.\"}",
+          "finish_reason": "stop",
+          "prompt_tokens": 1141,
+          "completion_tokens": 55,
+          "error": null
+        }
+      ]
+    },
+    {
+      "id": "go-001",
+      "outcome": "ok",
+      "attempts": 1,
+      "latency_ms": 4662,
+      "truncated": false,
+      "prompt_tokens": 1199,
+      "completion_tokens": 69,
+      "category": "runtime_error",
+      "severity": "critical",
+      "summary": "The API server crashed due to a nil pointer dereference, causing all replicas to enter a CrashLoopBackOff state.",
+      "suggested_action": "Investigate the code at /src/cmd/api/main.go around line 57 to fix the nil pointer issue and restart the service.",
+      "attempt_log": [
+        {
+          "content": "{\"category\":\"runtime_error\",\"severity\":\"critical\",\"summary\":\"The API server crashed due to a nil pointer dereference, causing all replicas to enter a CrashLoopBackOff state.\",\"suggested_action\":\"Investigate the code at /src/cmd/api/main.go around line 57 to fix the nil pointer issue and restart the service.\"}",
+          "finish_reason": "stop",
+          "prompt_tokens": 1199,
+          "completion_tokens": 69,
+          "error": null
+        }
+      ]
+    },
+    {
+      "id": "go-002",
+      "outcome": "ok",
+      "attempts": 1,
+      "latency_ms": 4156,
+      "truncated": false,
+      "prompt_tokens": 1176,
+      "completion_tokens": 59,
+      "category": "runtime_error",
+      "severity": "critical",
+      "summary": "A concurrent map write panic is occurring in the pricing service, causing frequent restarts and potential data corruption.",
+      "suggested_action": "Investigate the cache store implementation to prevent concurrent map writes, as this is causing critical service instability.",
+      "attempt_log": [
+        {
+          "content": "{\"category\":\"runtime_error\",\"severity\":\"critical\",\"summary\":\"A concurrent map write panic is occurring in the pricing service, causing frequent restarts and potential data corruption.\",\"suggested_action\":\"Investigate the cache store implementation to prevent concurrent map writes, as this is causing critical service instability.\"}",
+          "finish_reason": "stop",
+          "prompt_tokens": 1176,
+          "completion_tokens": 59,
+          "error": null
+        }
+      ]
+    },
+    {
+      "id": "go-003",
+      "outcome": "ok",
+      "attempts": 1,
+      "latency_ms": 4312,
+      "truncated": false,
+      "prompt_tokens": 1132,
+      "completion_tokens": 67,
+      "category": "network_error",
+      "severity": "high",
+      "summary": "Kafka client cannot connect to all brokers, causing producer failures and message loss.",
+      "suggested_action": "Check broker availability and network connectivity to 10.0.4.21:9092, then verify if the issue is temporary or persistent.",
+      "attempt_log": [
+        {
+          "content": "{\"category\":\"network_error\",\"severity\":\"high\",\"summary\":\"Kafka client cannot connect to all brokers, causing producer failures and message loss.\",\"suggested_action\":\"Check broker availability and network connectivity to 10.0.4.21:9092, then verify if the issue is temporary or persistent.\"}",
+          "finish_reason": "stop",
+          "prompt_tokens": 1132,
+          "completion_tokens": 67,
+          "error": null
+        }
+      ]
+    },
+    {
+      "id": "go-004",
+      "outcome": "ok",
+      "attempts": 1,
+      "latency_ms": 4205,
+      "truncated": false,
+      "prompt_tokens": 1143,
+      "completion_tokens": 64,
+      "category": "dependency_error",
+      "severity": "high",
+      "summary": "The build process failed because a required package version is missing from go.sum, causing the CI job to exit.",
+      "suggested_action": "Run `go mod download` to fetch the missing package, then re-run the build to verify the dependency is resolved.",
+      "attempt_log": [
+        {
+          "content": "{\"category\":\"dependency_error\",\"severity\":\"high\",\"summary\":\"The build process failed because a required package version is missing from go.sum, causing the CI job to exit.\",\"suggested_action\":\"Run `go mod download` to fetch the missing package, then re-run the build to verify the dependency is resolved.\"}",
+          "finish_reason": "stop",
+          "prompt_tokens": 1143,
+          "completion_tokens": 64,
+          "error": null
+        }
+      ]
+    },
+    {
+      "id": "go-005",
+      "outcome": "ok",
+      "attempts": 1,
+      "latency_ms": 3358,
+      "truncated": false,
+      "prompt_tokens": 1129,
+      "completion_tokens": 52,
+      "category": "network_error",
+      "severity": "high",
+      "summary": "TLS certificate verification failed for the bank gateway, causing transfer failures.",
+      "suggested_action": "Check the SSL certificate chain and reissue the certificate if the authority is unknown, then retry the transfer.",
+      "attempt_log": [
+        {
+          "content": "{\"category\":\"network_error\",\"severity\":\"high\",\"summary\":\"TLS certificate verification failed for the bank gateway, causing transfer failures.\",\"suggested_action\":\"Check the SSL certificate chain and reissue the certificate if the authority is unknown, then retry the transfer.\"}",
+          "finish_reason": "stop",
+          "prompt_tokens": 1129,
+          "completion_tokens": 52,
+          "error": null
+        }
+      ]
+    },
+    {
+      "id": "go-006",
+      "outcome": "ok",
+      "attempts": 1,
+      "latency_ms": 3737,
+      "truncated": false,
+      "prompt_tokens": 1179,
+      "completion_tokens": 53,
+      "category": "network_error",
+      "severity": "high",
+      "summary": "The server is rejecting incoming connections due to a limit on open file descriptors.",
+      "suggested_action": "Increase the number of open file descriptors in the system configuration or restart the service to allow more connections.",
+      "attempt_log": [
+        {
+          "content": "{\"category\":\"network_error\",\"severity\":\"high\",\"summary\":\"The server is rejecting incoming connections due to a limit on open file descriptors.\",\"suggested_action\":\"Increase the number of open file descriptors in the system configuration or restart the service to allow more connections.\"}",
+          "finish_reason": "stop",
+          "prompt_tokens": 1179,
+          "completion_tokens": 53,
+          "error": null
+        }
+      ]
+    },
+    {
+      "id": "go-007",
+      "outcome": "ok",
+      "attempts": 1,
+      "latency_ms": 4045,
+      "truncated": false,
+      "prompt_tokens": 1129,
+      "completion_tokens": 65,
+      "category": "validation_error",
+      "severity": "high",
+      "summary": "The incoming JSON payload contains a string where the 'items.qty' field expects an integer, causing a type mismatch.",
+      "suggested_action": "Validate that the client sends numeric values for 'items.qty' and ensure the server's JSON parser handles type coercion correctly.",
+      "attempt_log": [
+        {
+          "content": "{\"category\":\"validation_error\",\"severity\":\"high\",\"summary\":\"The incoming JSON payload contains a string where the 'items.qty' field expects an integer, causing a type mismatch.\",\"suggested_action\":\"Validate that the client sends numeric values for 'items.qty' and ensure the server's JSON parser handles type coercion correctly.\"}",
+          "finish_reason": "stop",
+          "prompt_tokens": 1129,
+          "completion_tokens": 65,
+          "error": null
+        }
+      ]
+    },
+    {
+      "id": "sql-001",
+      "outcome": "ok",
+      "attempts": 1,
+      "latency_ms": 4290,
+      "truncated": false,
+      "prompt_tokens": 1182,
+      "completion_tokens": 57,
+      "category": "database_error",
+      "severity": "high",
+      "summary": "A deadlock occurred in the inventory update transaction, blocking both processes.",
+      "suggested_action": "Check the server logs for the specific queries causing the lock contention and consider adding isolation levels or retry logic to prevent future deadlocks.",
+      "attempt_log": [
+        {
+          "content": "{\"category\":\"database_error\",\"severity\":\"high\",\"summary\":\"A deadlock occurred in the inventory update transaction, blocking both processes.\",\"suggested_action\":\"Check the server logs for the specific queries causing the lock contention and consider adding isolation levels or retry logic to prevent future deadlocks.\"}",
+          "finish_reason": "stop",
+          "prompt_tokens": 1182,
+          "completion_tokens": 57,
+          "error": null
+        }
+      ]
+    },
+    {
+      "id": "sql-002",
+      "outcome": "ok",
+      "attempts": 1,
+      "latency_ms": 4217,
+      "truncated": false,
+      "prompt_tokens": 1127,
+      "completion_tokens": 64,
+      "category": "syntax_error",
+      "severity": "high",
+      "summary": "The SQL query contains a syntax error near the keyword 'FROM', preventing the dashboard panel from executing.",
+      "suggested_action": "Review the SQL query to correct the syntax error, specifically the placement of the 'FROM' keyword, and re-run the query.",
+      "attempt_log": [
+        {
+          "content": "{\"category\":\"syntax_error\",\"severity\":\"high\",\"summary\":\"The SQL query contains a syntax error near the keyword 'FROM', preventing the dashboard panel from executing.\",\"suggested_action\":\"Review the SQL query to correct the syntax error, specifically the placement of the 'FROM' keyword, and re-run the query.\"}",
+          "finish_reason": "stop",
+          "prompt_tokens": 1127,
+          "completion_tokens": 64,
+          "error": null
+        }
+      ]
+    },
+    {
+      "id": "sql-003",
+      "outcome": "ok",
+      "attempts": 1,
+      "latency_ms": 3574,
+      "truncated": false,
+      "prompt_tokens": 1112,
+      "completion_tokens": 54,
+      "category": "database_error",
+      "severity": "high",
+      "summary": "A duplicate order number was inserted, violating the unique constraint on the orders table.",
+      "suggested_action": "Check the application logic to prevent duplicate submissions and review the database index definition for the order_number column.",
+      "attempt_log": [
+        {
+          "content": "{\"category\":\"database_error\",\"severity\":\"high\",\"summary\":\"A duplicate order number was inserted, violating the unique constraint on the orders table.\",\"suggested_action\":\"Check the application logic to prevent duplicate submissions and review the database index definition for the order_number column.\"}",
+          "finish_reason": "stop",
+          "prompt_tokens": 1112,
+          "completion_tokens": 54,
+          "error": null
+        }
+      ]
+    },
+    {
+      "id": "sql-004",
+      "outcome": "ok",
+      "attempts": 1,
+      "latency_ms": 3739,
+      "truncated": false,
+      "prompt_tokens": 1120,
+      "completion_tokens": 57,
+      "category": "database_error",
+      "severity": "high",
+      "summary": "The query failed due to a permission error on the payments table, preventing data retrieval.",
+      "suggested_action": "Check the user's permissions on the payments table and ensure the user has the necessary privileges to access the data.",
+      "attempt_log": [
+        {
+          "content": "{\"category\":\"database_error\",\"severity\":\"high\",\"summary\":\"The query failed due to a permission error on the payments table, preventing data retrieval.\",\"suggested_action\":\"Check the user's permissions on the payments table and ensure the user has the necessary privileges to access the data.\"}",
+          "finish_reason": "stop",
+          "prompt_tokens": 1120,
+          "completion_tokens": 57,
+          "error": null
+        }
+      ]
+    },
+    {
+      "id": "sql-005",
+      "outcome": "ok",
+      "attempts": 1,
+      "latency_ms": 3877,
+      "truncated": false,
+      "prompt_tokens": 1138,
+      "completion_tokens": 58,
+      "category": "resource_error",
+      "severity": "high",
+      "summary": "The shared memory segment is full, causing PostgreSQL to fail to resize it and blocking analytics queries.",
+      "suggested_action": "Free up space in the /dev/shm partition or increase the shared memory limit in the container configuration.",
+      "attempt_log": [
+        {
+          "content": "{\"category\":\"resource_error\",\"severity\":\"high\",\"summary\":\"The shared memory segment is full, causing PostgreSQL to fail to resize it and blocking analytics queries.\",\"suggested_action\":\"Free up space in the /dev/shm partition or increase the shared memory limit in the container configuration.\"}",
+          "finish_reason": "stop",
+          "prompt_tokens": 1138,
+          "completion_tokens": 58,
+          "error": null
+        }
+      ]
+    },
+    {
+      "id": "sql-006",
+      "outcome": "ok",
+      "attempts": 1,
+      "latency_ms": 3647,
+      "truncated": false,
+      "prompt_tokens": 1131,
+      "completion_tokens": 56,
+      "category": "database_error",
+      "severity": "high",
+      "summary": "A database query timed out during a customer data export, causing the operation to be cancelled.",
+      "suggested_action": "Check the database connection pool and query execution limits; investigate why the timeout occurred on the specific query.",
+      "attempt_log": [
+        {
+          "content": "{\"category\":\"database_error\",\"severity\":\"high\",\"summary\":\"A database query timed out during a customer data export, causing the operation to be cancelled.\",\"suggested_action\":\"Check the database connection pool and query execution limits; investigate why the timeout occurred on the specific query.\"}",
+          "finish_reason": "stop",
+          "prompt_tokens": 1131,
+          "completion_tokens": 56,
+          "error": null
+        }
+      ]
+    },
+    {
+      "id": "sql-007",
+      "outcome": "ok",
+      "attempts": 1,
+      "latency_ms": 3711,
+      "truncated": false,
+      "prompt_tokens": 1122,
+      "completion_tokens": 59,
+      "category": "database_error",
+      "severity": "high",
+      "summary": "The database connection failed due to authentication failure for the 'report' user, preventing the weekly report generation.",
+      "suggested_action": "Verify the password for the 'report' user in the database and ensure the connection string is correct.",
+      "attempt_log": [
+        {
+          "content": "{\"category\":\"database_error\",\"severity\":\"high\",\"summary\":\"The database connection failed due to authentication failure for the 'report' user, preventing the weekly report generation.\",\"suggested_action\":\"Verify the password for the 'report' user in the database and ensure the connection string is correct.\"}",
+          "finish_reason": "stop",
+          "prompt_tokens": 1122,
+          "completion_tokens": 59,
+          "error": null
+        }
+      ]
+    },
+    {
+      "id": "infra-001",
+      "outcome": "ok",
+      "attempts": 1,
+      "latency_ms": 4497,
+      "truncated": false,
+      "prompt_tokens": 1196,
+      "completion_tokens": 63,
+      "category": "resource_error",
+      "severity": "critical",
+      "summary": "The Java application ran out of memory and was killed, causing the pod to restart multiple times.",
+      "suggested_action": "Check the application's memory usage and increase the heap size if the issue persists, or investigate if the workload is causing OOM.",
+      "attempt_log": [
+        {
+          "content": "{\"category\":\"resource_error\",\"severity\":\"critical\",\"summary\":\"The Java application ran out of memory and was killed, causing the pod to restart multiple times.\",\"suggested_action\":\"Check the application's memory usage and increase the heap size if the issue persists, or investigate if the workload is causing OOM.\"}",
+          "finish_reason": "stop",
+          "prompt_tokens": 1196,
+          "completion_tokens": 63,
+          "error": null
+        }
+      ]
+    },
+    {
+      "id": "infra-002",
+      "outcome": "ok",
+      "attempts": 1,
+      "latency_ms": 4707,
+      "truncated": false,
+      "prompt_tokens": 1179,
+      "completion_tokens": 65,
+      "category": "network_error",
+      "severity": "high",
+      "summary": "The Kubernetes pod cannot reach the backend service on port 8000, causing readiness probes to fail.",
+      "suggested_action": "Check network connectivity between the pod and the service, verify the service is running, and ensure no firewall rules block the connection.",
+      "attempt_log": [
+        {
+          "content": "{\"category\":\"network_error\",\"severity\":\"high\",\"summary\":\"The Kubernetes pod cannot reach the backend service on port 8000, causing readiness probes to fail.\",\"suggested_action\":\"Check network connectivity between the pod and the service, verify the service is running, and ensure no firewall rules block the connection.\"}",
+          "finish_reason": "stop",
+          "prompt_tokens": 1179,
+          "completion_tokens": 65,
+          "error": null
+        }
+      ]
+    },
+    {
+      "id": "infra-005",
+      "outcome": "ok",
+      "attempts": 1,
+      "latency_ms": 4176,
+      "truncated": false,
+      "prompt_tokens": 1140,
+      "completion_tokens": 63,
+      "category": "dependency_error",
+      "severity": "critical",
+      "summary": "The gunicorn executable is missing from the system PATH, causing all web service instances to fail.",
+      "suggested_action": "Locate the correct gunicorn binary path and add it to the system PATH, or reinstall the package if it was not installed.",
+      "attempt_log": [
+        {
+          "content": "{\"category\":\"dependency_error\",\"severity\":\"critical\",\"summary\":\"The gunicorn executable is missing from the system PATH, causing all web service instances to fail.\",\"suggested_action\":\"Locate the correct gunicorn binary path and add it to the system PATH, or reinstall the package if it was not installed.\"}",
+          "finish_reason": "stop",
+          "prompt_tokens": 1140,
+          "completion_tokens": 63,
+          "error": null
+        }
+      ]
+    },
+    {
+      "id": "infra-007",
+      "outcome": "ok",
+      "attempts": 1,
+      "latency_ms": 4482,
+      "truncated": false,
+      "prompt_tokens": 1253,
+      "completion_tokens": 54,
+      "category": "unknown",
+      "severity": "low",
+      "summary": "The text is a repeated SSH authentication attempt log, not a specific error message.",
+      "suggested_action": "No action needed; this is a standard security log entry indicating a failed login followed by a successful one.",
+      "attempt_log": [
+        {
+          "content": "{\"category\":\"unknown\",\"severity\":\"low\",\"summary\":\"The text is a repeated SSH authentication attempt log, not a specific error message.\",\"suggested_action\":\"No action needed; this is a standard security log entry indicating a failed login followed by a successful one.\"}",
+          "finish_reason": "stop",
+          "prompt_tokens": 1253,
+          "completion_tokens": 54,
+          "error": null
+        }
+      ]
+    },
+    {
+      "id": "infra-008",
+      "outcome": "ok",
+      "attempts": 1,
+      "latency_ms": 3467,
+      "truncated": false,
+      "prompt_tokens": 1128,
+      "completion_tokens": 53,
+      "category": "configuration_error",
+      "severity": "high",
+      "summary": "The application failed to start because the required REDIS_URL environment variable is missing.",
+      "suggested_action": "Set the REDIS_URL environment variable to a valid Redis connection string and restart the worker process.",
+      "attempt_log": [
+        {
+          "content": "{\"category\":\"configuration_error\",\"severity\":\"high\",\"summary\":\"The application failed to start because the required REDIS_URL environment variable is missing.\",\"suggested_action\":\"Set the REDIS_URL environment variable to a valid Redis connection string and restart the worker process.\"}",
+          "finish_reason": "stop",
+          "prompt_tokens": 1128,
+          "completion_tokens": 53,
+          "error": null
+        }
+      ]
+    },
+    {
+      "id": "infra-009",
+      "outcome": "ok",
+      "attempts": 1,
+      "latency_ms": 3343,
+      "truncated": false,
+      "prompt_tokens": 1116,
+      "completion_tokens": 54,
+      "category": "configuration_error",
+      "severity": "high",
+      "summary": "The YAML configuration file has invalid syntax, causing the pipeline to fail during deployment.",
+      "suggested_action": "Fix the YAML syntax error in the file, then re-run the deployment command to verify the fix.",
+      "attempt_log": [
+        {
+          "content": "{\"category\":\"configuration_error\",\"severity\":\"high\",\"summary\":\"The YAML configuration file has invalid syntax, causing the pipeline to fail during deployment.\",\"suggested_action\":\"Fix the YAML syntax error in the file, then re-run the deployment command to verify the fix.\"}",
+          "finish_reason": "stop",
+          "prompt_tokens": 1116,
+          "completion_tokens": 54,
+          "error": null
+        }
+      ]
+    },
+    {
+      "id": "ru-001",
+      "outcome": "ok",
+      "attempts": 1,
+      "latency_ms": 3851,
+      "truncated": false,
+      "prompt_tokens": 1133,
+      "completion_tokens": 56,
+      "category": "resource_error",
+      "severity": "high",
+      "summary": "The application ran out of memory while exporting a large report, causing the export to fail.",
+      "suggested_action": "Check the memory usage of the application and consider increasing the heap size or optimizing the report generation logic.",
+      "attempt_log": [
+        {
+          "content": "{\"category\":\"resource_error\",\"severity\":\"high\",\"summary\":\"The application ran out of memory while exporting a large report, causing the export to fail.\",\"suggested_action\":\"Check the memory usage of the application and consider increasing the heap size or optimizing the report generation logic.\"}",
+          "finish_reason": "stop",
+          "prompt_tokens": 1133,
+          "completion_tokens": 56,
+          "error": null
+        }
+      ]
+    },
+    {
+      "id": "de-001",
+      "outcome": "ok",
+      "attempts": 1,
+      "latency_ms": 4739,
+      "truncated": false,
+      "prompt_tokens": 1121,
+      "completion_tokens": 51,
+      "category": "configuration_error",
+      "severity": "high",
+      "summary": "The application failed to start because the configuration file was not found.",
+      "suggested_action": "Check if the config.ini file exists in the specified path and ensure it is not corrupted or missing.",
+      "attempt_log": [
+        {
+          "content": "{\"category\":\"configuration_error\",\"severity\":\"high\",\"summary\":\"The application failed to start because the configuration file was not found.\",\"suggested_action\":\"Check if the config.ini file exists in the specified path and ensure it is not corrupted or missing.\"}",
+          "finish_reason": "stop",
+          "prompt_tokens": 1121,
+          "completion_tokens": 51,
+          "error": null
+        }
+      ]
+    },
+    {
+      "id": "ru-002",
+      "outcome": "ok",
+      "attempts": 1,
+      "latency_ms": 5014,
+      "truncated": false,
+      "prompt_tokens": 1121,
+      "completion_tokens": 63,
+      "category": "validation_error",
+      "severity": "high",
+      "summary": "The system rejected the contract card because the INN field contains 9 digits instead of the required 10 or 12.",
+      "suggested_action": "Correct the INN value to 10 or 12 digits and retry the save operation.",
+      "attempt_log": [
+        {
+          "content": "{\"category\":\"validation_error\",\"severity\":\"high\",\"summary\":\"The system rejected the contract card because the INN field contains 9 digits instead of the required 10 or 12.\",\"suggested_action\":\"Correct the INN value to 10 or 12 digits and retry the save operation.\"}",
+          "finish_reason": "stop",
+          "prompt_tokens": 1121,
+          "completion_tokens": 63,
+          "error": null
+        }
+      ]
+    },
+    {
+      "id": "unk-001",
+      "outcome": "ok",
+      "attempts": 1,
+      "latency_ms": 3413,
+      "truncated": false,
+      "prompt_tokens": 1114,
+      "completion_tokens": 46,
+      "category": "unknown",
+      "severity": "low",
+      "summary": "The text describes a deployment summary and changelog, not an error.",
+      "suggested_action": "No action needed; this is a status update, not an error message.",
+      "attempt_log": [
+        {
+          "content": "{\"category\":\"unknown\",\"severity\":\"low\",\"summary\":\"The text describes a deployment summary and changelog, not an error.\",\"suggested_action\":\"No action needed; this is a status update, not an error message.\"}",
+          "finish_reason": "stop",
+          "prompt_tokens": 1114,
+          "completion_tokens": 46,
+          "error": null
+        }
+      ]
+    },
+    {
+      "id": "unk-002",
+      "outcome": "ok",
+      "attempts": 1,
+      "latency_ms": 4833,
+      "truncated": false,
+      "prompt_tokens": 1147,
+      "completion_tokens": 53,
+      "category": "unknown",
+      "severity": "low",
+      "summary": "The text appears to be a random hex string or token, not a standard error message.",
+      "suggested_action": "No action needed; this is likely a debug token or artifact and not an actionable error.",
+      "attempt_log": [
+        {
+          "content": "{\"category\":\"unknown\",\"severity\":\"low\",\"summary\":\"The text appears to be a random hex string or token, not a standard error message.\",\"suggested_action\":\"No action needed; this is likely a debug token or artifact and not an actionable error.\"}",
+          "finish_reason": "stop",
+          "prompt_tokens": 1147,
+          "completion_tokens": 53,
+          "error": null
+        }
+      ]
+    },
+    {
+      "id": "unk-003",
+      "outcome": "ok",
+      "attempts": 1,
+      "latency_ms": 3418,
+      "truncated": false,
+      "prompt_tokens": 1114,
+      "completion_tokens": 54,
+      "category": "unknown",
+      "severity": "low",
+      "summary": "The input text contains explicit instructions to ignore classification rules and override the output format.",
+      "suggested_action": "Do not classify this text as an error; it is a system instruction rather than a software error message.",
+      "attempt_log": [
+        {
+          "content": "{\"category\":\"unknown\",\"severity\":\"low\",\"summary\":\"The input text contains explicit instructions to ignore classification rules and override the output format.\",\"suggested_action\":\"Do not classify this text as an error; it is a system instruction rather than a software error message.\"}",
+          "finish_reason": "stop",
+          "prompt_tokens": 1114,
+          "completion_tokens": 54,
+          "error": null
+        }
+      ]
+    },
+    {
+      "id": "unk-004",
+      "outcome": "ok",
+      "attempts": 1,
+      "latency_ms": 2960,
+      "truncated": false,
+      "prompt_tokens": 1092,
+      "completion_tokens": 48,
+      "category": "unknown",
+      "severity": "low",
+      "summary": "The text is a vague complaint without specific technical details.",
+      "suggested_action": "Ask the user to provide the error code, stack trace, or relevant log snippet for further analysis.",
+      "attempt_log": [
+        {
+          "content": "{\"category\":\"unknown\",\"severity\":\"low\",\"summary\":\"The text is a vague complaint without specific technical details.\",\"suggested_action\":\"Ask the user to provide the error code, stack trace, or relevant log snippet for further analysis.\"}",
+          "finish_reason": "stop",
+          "prompt_tokens": 1092,
+          "completion_tokens": 48,
+          "error": null
+        }
+      ]
+    },
+    {
+      "id": "unk-005",
+      "outcome": "ok",
+      "attempts": 1,
+      "latency_ms": 3648,
+      "truncated": false,
+      "prompt_tokens": 1128,
+      "completion_tokens": 46,
+      "category": "unknown",
+      "severity": "low",
+      "summary": "The log line indicates a successful cleanup operation, not an error.",
+      "suggested_action": "No action needed; this is a success message, not an error to report.",
+      "attempt_log": [
+        {
+          "content": "{\"category\":\"unknown\",\"severity\":\"low\",\"summary\":\"The log line indicates a successful cleanup operation, not an error.\",\"suggested_action\":\"No action needed; this is a success message, not an error to report.\"}",
+          "finish_reason": "stop",
+          "prompt_tokens": 1128,
+          "completion_tokens": 46,
+          "error": null
+        }
+      ]
+    }
+  ]
+}
