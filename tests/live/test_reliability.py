@@ -1,6 +1,7 @@
 import asyncio
 import base64
 import json
+import logging
 import os
 import random
 import time
@@ -8,6 +9,7 @@ import time
 import anyio
 import httpx
 import pytest
+import uvicorn
 from conftest import Serve
 
 from error_classifier.api.app import create_app
@@ -89,3 +91,28 @@ async def test_deadline_gives_504_and_frees_the_slot(serve: Serve) -> None:
         assert response.json()["error"]["code"] == "llm_timeout"
         assert elapsed <= 4.5
         await _wait_for_free_slots(15)
+
+
+async def test_disconnect_frees_the_slot(caplog: pytest.LogCaptureFixture) -> None:
+    caplog.set_level(logging.INFO, logger="error_classifier")
+    app = create_app(_live_settings(request_timeout_s=120))
+    server = uvicorn.Server(uvicorn.Config(app, host="127.0.0.1", port=0, log_level="warning"))
+    serving = asyncio.create_task(server.serve())
+    try:
+        with anyio.fail_after(10):
+            while not server.started:  # noqa: ASYNC110
+                await asyncio.sleep(0.05)
+        port = server.servers[0].sockets[0].getsockname()[1]
+        async with httpx.AsyncClient(base_url=f"http://127.0.0.1:{port}", timeout=None) as client:
+            request = asyncio.create_task(
+                client.post("/classify", json={"message": _base64_message()})
+            )
+            await asyncio.sleep(3)
+            request.cancel()
+            with pytest.raises(asyncio.CancelledError):
+                await request
+        await _wait_for_free_slots(15)
+    finally:
+        server.should_exit = True
+        await serving
+    assert any("outcome=client_closed" in r.getMessage() for r in caplog.records)
