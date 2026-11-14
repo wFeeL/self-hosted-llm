@@ -12,7 +12,7 @@ from error_classifier.evaluation.dataset import EvalItem
 
 SUMMARY_LIMIT: Final = 200  # prompt limit, the schema allows 300
 ACTION_LIMIT: Final = 300  # prompt limit, the schema allows 400
-DEFAULT_MODEL: Final = "granite-4.1-3b-q4km"
+DEFAULT_MODEL: Final = "qwen3.5-2b-q4km"
 MIN_VALID: Final = 57
 MIN_FIRST_ATTEMPT: Final = 54
 MCNEMAR_ALPHA: Final = 0.05

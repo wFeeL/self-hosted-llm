@@ -436,3 +436,7 @@ def test_choice_common_rows_only() -> None:
     choice = choose_model([slow, other])
     assert choice.common_p50_ms == {"m-a": 12000, "m-b": 10000}
     assert choice.model == "m-b"
+
+
+def test_default_model_is_the_chosen_one() -> None:
+    assert DEFAULT_MODEL == "qwen3.5-2b-q4km"
