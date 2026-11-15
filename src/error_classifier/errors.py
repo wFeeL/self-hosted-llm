@@ -32,6 +32,17 @@ class ModelNotFoundError(ServiceError):
     status_code = 404
 
 
+class UnauthorizedError(ServiceError):
+    code = "unauthorized"
+    status_code = 401
+
+    def __init__(self, message: str = "Missing or invalid API key") -> None:
+        super().__init__(message)
+
+    def headers(self) -> dict[str, str]:
+        return {**super().headers(), "WWW-Authenticate": "Bearer"}
+
+
 class ModelOutputInvalidError(ServiceError):
     code = "model_output_invalid"
     status_code = 502

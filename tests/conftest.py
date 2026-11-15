@@ -34,6 +34,7 @@ def clean_env(monkeypatch: pytest.MonkeyPatch) -> None:
         "LLM_DISABLE_THINKING",
         "API_URL",
         "MODEL_ALIAS",
+        "API_KEY",
     ):
         monkeypatch.delenv(name, raising=False)
 

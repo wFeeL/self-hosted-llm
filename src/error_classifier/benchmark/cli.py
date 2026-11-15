@@ -173,6 +173,7 @@ async def _execute(
     run: Runner,
     clock: Callable[[], float],
     sleep_async: Callable[[float], Awaitable[None]],
+    api_key: str | None,
 ) -> tuple[RunResult, str | None]:
     async with httpx.AsyncClient() as http:
         result = await run_bench(
@@ -184,6 +185,7 @@ async def _execute(
             sleep=sleep_async,
             on_record=_progress,
             on_phase=_phase_started,
+            api_key=api_key,
         )
         return result, await _model_path(http, target.llm_url)
 
@@ -231,7 +233,9 @@ def _run(
         max_s=cast(float, args.max_minutes) * 60,
     )
     try:
-        result, model_path = asyncio.run(_execute(target, plan, run, clock, sleep_async))
+        result, model_path = asyncio.run(
+            _execute(target, plan, run, clock, sleep_async, os.environ.get("API_KEY") or None)
+        )
     except BenchUnavailable as exc:
         _err(str(exc))
         return 3

@@ -5,16 +5,17 @@ from collections.abc import Callable
 from functools import partial
 from typing import Literal, cast
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Depends, Request
 from fastapi.responses import Response
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
+from error_classifier.api.auth import require_api_key
 from error_classifier.api.routes import classify_message, describe_invalid
 from error_classifier.classify.service import Classification, ClassifyStats
 from error_classifier.config import Settings
 from error_classifier.errors import InvalidInputError, ModelNotFoundError
 
-router = APIRouter(prefix="/v1")
+router = APIRouter(prefix="/v1", dependencies=[Depends(require_api_key)])
 
 TEXT_ONLY = "Only text content parts are supported"
 

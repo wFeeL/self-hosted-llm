@@ -56,6 +56,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     if settings is None:
         settings = load_settings()
     logging.basicConfig(level=settings.log_level)
+    if settings.api_key is None:
+        logging.getLogger("error_classifier.api").warning(
+            "API_KEY is empty: the API accepts requests without a key"
+        )
     # uvicorn configures its loggers before calling the factory, so set the level again here.
     for name in ("uvicorn", "uvicorn.error", "uvicorn.access"):
         logging.getLogger(name).setLevel(settings.log_level)

@@ -209,7 +209,9 @@ class _Bench:
         sleep: Callable[[float], Awaitable[None]],
         on_record: Callable[[RequestRecord], None] | None,
         max_s: float,
+        api_key: str | None = None,
     ) -> None:
+        self.api_headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
         self.target = target
         self.run = run
         self.http = http
@@ -227,7 +229,9 @@ class _Bench:
 
     async def get_ok(self, url: str) -> bool:
         try:
-            response = await self.http.get(url, timeout=PROBE_TIMEOUT_S)
+            # The key goes to the API only, never to llama-server.
+            headers = self.api_headers if url.startswith(self.target.api_url) else {}
+            response = await self.http.get(url, headers=headers, timeout=PROBE_TIMEOUT_S)
         except httpx.HTTPError:
             return False
         return response.status_code == 200
@@ -315,6 +319,7 @@ class _Bench:
             response = await self.http.post(
                 f"{self.target.api_url}/classify",
                 json={"message": text},
+                headers=self.api_headers,
                 timeout=self.client_timeout_s,
             )
         except httpx.TimeoutException:
@@ -323,6 +328,8 @@ class _Bench:
             outcome = "transport_error"
         else:
             status = response.status_code
+            if status == 401 and phase == "warmup" and index == 0:
+                raise BenchUnavailable("the API answered 401: export API_KEY before the run")
             if status == 200:
                 outcome = "ok"
                 if self.model is None:
@@ -420,8 +427,9 @@ async def run_bench(
     sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
     on_record: Callable[[RequestRecord], None] | None = None,
     on_phase: Callable[[Phase], None] | None = None,
+    api_key: str | None = None,
 ) -> RunResult:
-    bench = _Bench(target, run, http, clock, sleep, on_record, plan.max_s)
+    bench = _Bench(target, run, http, clock, sleep, on_record, plan.max_s, api_key)
     cold: ColdStart | None = None
     llm_env: dict[str, str] = {}
     if plan.cold_start:

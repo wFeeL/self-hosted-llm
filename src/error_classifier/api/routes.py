@@ -3,11 +3,12 @@ import time
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from typing import cast
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Depends, Request
 from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel, ConfigDict, ValidationError
 from starlette.requests import ClientDisconnect
 
+from error_classifier.api.auth import require_api_key
 from error_classifier.api.disconnect import ClientDisconnectedError, cancel_on_disconnect
 from error_classifier.classify.service import Classification, Classifier, ClassifyStats
 from error_classifier.concurrency import ConcurrencyLimiter
@@ -179,7 +180,7 @@ async def classify_message(
     return result, stats
 
 
-@router.post("/classify", response_model=None)
+@router.post("/classify", response_model=None, dependencies=[Depends(require_api_key)])
 async def classify(request: Request) -> dict[str, object] | Response:
     outcome = await classify_message(request, _parse_classify, "classify")
     if isinstance(outcome, Response):
