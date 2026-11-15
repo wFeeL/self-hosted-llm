@@ -244,11 +244,11 @@ def render_bench_report(files: Sequence[BenchFile]) -> str:
         memory_rows.append(
             [
                 c.model,
-                _gib(a.llm_anon_max),
                 _gib(m.llm_peak),
                 _gib(m.llm_file),
                 _gib(m.api_peak),
                 _gib(c.model_file_size),
+                _gib(a.llm_anon_max),
                 _gib(_total(a.llm_anon_max, c.model_file_size)),
                 _gib(_total(m.llm_peak, c.model_file_size)),
                 _gib(c.llm_image_size),
@@ -302,13 +302,13 @@ def render_bench_report(files: Sequence[BenchFile]) -> str:
         _table(
             [
                 "Model",
-                "llm anon max",
                 "llm peak",
                 "llm file",
                 "api peak",
                 "GGUF",
-                "RAM needed",
-                "RAM upper bound",
+                "RAM floor",
+                "RAM, conservative",
+                "RAM, worst",
                 "llm image",
                 "api image",
             ],
