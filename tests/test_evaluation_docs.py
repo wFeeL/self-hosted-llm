@@ -94,7 +94,7 @@ def test_stored_summary_matches_items() -> None:
 
 
 def test_docs_tables_match_report() -> None:
-    text = (ROOT / "docs" / "evaluation.md").read_text(encoding="utf-8")
+    text = (ROOT / "README.md").read_text(encoding="utf-8")
     assert text.count(MARKER_START) == 1
     assert text.count(MARKER_END) == 1
     between = text.split(MARKER_START)[1].split(MARKER_END)[0]
