@@ -194,19 +194,19 @@ All settings live in `.env`, copied from `.env.example`; compose passes each ser
 | MAX_REQUEST_BYTES | 262144 | Largest request body, not less than 12 times `MAX_INPUT_CHARS` plus 64 |
 | MAX_OUTPUT_TOKENS | 256 | Token limit of the model answer, 16 to 2048 |
 | LLM_TEMPERATURE | 0.0 | Sampling temperature, 0 to 2 |
-| LLM_DISABLE_THINKING | false | Sends `chat_template_kwargs` with `enable_thinking: false` for models that think |
+| LLM_DISABLE_THINKING | required (`true` in `.env.example` for the default model) | Sends `chat_template_kwargs` with `enable_thinking: false` for models that think |
 | API_KEY | empty | Access key: when set, `/classify` and `/v1/*` need `Authorization: Bearer <API_KEY>` and answer 401 `unauthorized` otherwise; letters, digits and `. _ ~ + / = -` only (use `openssl rand -hex 32`); `/health` and `/ready` stay open |
 | HF_TOKEN | not set | Only for gated models, passed to `llm` with a `compose.override.yaml` (see [Deploying on a clean VPS](#deploying-on-a-clean-vps)) |
 
 ## Deploying on a clean VPS
 
-These steps target Ubuntu 24.04 LTS on a server without a GPU. They use Docker Engine with the Compose plugin; nothing in the code changes between machines, only `.env`. The steps were written against the stack that runs on podman here and were not yet run on a clean VPS.
+These steps target Ubuntu 24.04 LTS on a server without a GPU and use Docker Engine with the Compose plugin. Nothing in the code changes between machines, only `.env`. The stack was run here with podman; these Docker steps have not yet been run on a clean VPS.
 
 ### 1. Pick the server
 
-Use the table in [Choosing a model](#choosing-a-model): the default model needs a server with 4 GiB of RAM and 2.3 GiB of disk for the images and the model file, plus room for every other model you download. All measurements were taken on 8 vCPU; with fewer cores the answers are slower, and the sizing table below gives settings for 2 and 4 vCPU.
+Use the table in [Choosing a model](#choosing-a-model): the default model fits a server with 4 GiB of RAM. Plan for at least 10 GB of free disk: the images and the model file take 2.3 GiB, and Docker, the build cache, logs and every further model need room too. All measurements were taken on 8 vCPU; with fewer cores the answers are slower.
 
-The server needs outbound HTTPS to the Docker package repository and Docker Hub (Docker itself and the `python` base image of `api`), `ghcr.io` (the llama.cpp image), PyPI (dependencies while `api` is built) and `huggingface.co` (the first download of the model). Check before you start:
+The server needs outbound HTTPS to the Docker package repository, Docker Hub (the `python` base image of `api`), `ghcr.io` (the llama.cpp image), PyPI (dependencies while `api` is built) and Hugging Face (the first download of the model). The registries and Hugging Face serve files from other hosts behind these addresses, so the two checks below only show that the entry points answer:
 
 ```sh
 curl -sSI https://huggingface.co | head -1
@@ -215,14 +215,19 @@ curl -sSI https://ghcr.io | head -1
 
 ### 2. Install Docker Engine
 
-Install Docker Engine and the Compose plugin from Docker's own apt repository as described in [Install Docker Engine on Ubuntu](https://docs.docker.com/engine/install/ubuntu/) (checked 2026-11-15), not the `docker.io` package of Ubuntu. Then enable the service so it starts on boot:
+Remove the unofficial packages and install Docker Engine and the Compose plugin from Docker's apt repository as described in [Install Docker Engine on Ubuntu](https://docs.docker.com/engine/install/ubuntu/) (checked 2026-11-15); do not use the `docker.io` package of Ubuntu. On Ubuntu the Docker service starts on boot by default. Check it:
 
 ```sh
-sudo systemctl enable --now docker
+sudo systemctl is-enabled docker
 docker compose version
 ```
 
-Adding your user to the `docker` group lets it run `docker` without `sudo`, which is the same as root access on that machine ([post-installation steps](https://docs.docker.com/engine/install/linux-postinstall/)).
+The commands below run without `sudo`. That needs your user in the `docker` group, which grants root-level access to the machine ([post-installation steps](https://docs.docker.com/engine/install/linux-postinstall/)):
+
+```sh
+sudo usermod -aG docker "$USER"
+newgrp docker
+```
 
 ### 3. Get the code and the configuration
 
@@ -231,83 +236,94 @@ git clone https://github.com/wFeeL/self-hosted-llm.git llm-error-classifier
 cd llm-error-classifier
 cp .env.example .env
 chmod 600 .env
+sed -i "s/^API_KEY=.*/API_KEY=$(openssl rand -hex 32)/" .env
 ```
 
-Size `.env` before the first start:
+The last line writes a random key into `.env`. `.env` is read by Compose, not by a shell, so a `$(...)` written into the file would not run, and `$`, quotes and `#` in a key would be changed by Compose; the key allows only letters, digits and `. _ ~ + / = -`. Clients send it as `Authorization: Bearer <key>`.
 
-| Server | `LLM_CPUS` | `LLAMA_ARG_THREADS` | `API_CPUS` | `LLAMA_ARG_N_PARALLEL` | `LLAMA_ARG_CTX_SIZE` | `REQUEST_TIMEOUT_S` |
-|---|---|---|---|---|---|---|
-| 8 vCPU (as measured) | 6 | 6 | 1 | 2 | 8192 | 120 |
-| 4 vCPU | 3 | 3 | 1 | 1 | 4096 | 180 |
-| 2 vCPU | 2 | 2 | 0.5 | 1 | 4096 | 300 |
+Size `.env` before the first start. The defaults fit the machine the measurements come from (8 vCPU, 15 GB RAM); Docker refuses a `cpus` limit above the number of cores, so smaller servers must change `LLM_CPUS` first.
+
+| Server | `LLM_CPUS` | `LLAMA_ARG_THREADS` | `API_CPUS` | `LLAMA_ARG_N_PARALLEL` | `LLAMA_ARG_CTX_SIZE` | `LLM_MEM_LIMIT` | `REQUEST_TIMEOUT_S` |
+|---|---|---|---|---|---|---|---|
+| 8 vCPU, 8 GB or more (as measured) | 6 | 6 | 1 | 2 | 8192 | 6g | 120 |
+| 4 vCPU, 4 GB | 3 | 3 | 0.5 | 1 | 4096 | 2500m | 180 |
+| 2 vCPU, 4 GB (not measured) | 1.5 | 1 | 0.5 | 1 | 4096 | 2500m | 300 |
 
 - Keep `LLAMA_ARG_CTX_SIZE` at least `LLAMA_ARG_N_PARALLEL` × 4096: the context is split between slots, and a 3000-character input needs about 4096 tokens of a slot.
-- Keep `LLM_MEM_LIMIT` below the RAM of the server minus 1.5 GB and above the `llm need` of your model in the benchmark tables.
+- Keep `LLM_MEM_LIMIT` below the RAM of the server minus about 1.5 GB for the system, and above the `llm need` of your model in the benchmark tables (2.34 GiB for the default). A limit above the RAM protects nothing.
 - The timeouts for 4 and 2 vCPU are estimates from the 8 vCPU measurements; speed on smaller servers was not measured.
-- Set an API key, because the service will be reachable from the network: `API_KEY=$(openssl rand -hex 32)` in `.env`. Clients send it as `Authorization: Bearer <key>`.
 
 ### 4. First start
 
+`docker compose up -d` waits until `llm` is healthy before it starts `api`, and the first start downloads the model, so on a slow network the command itself can take many minutes. Run it in `tmux` or `screen`; if the SSH session drops, the containers already created keep running, and running the command again continues.
+
 ```sh
+tmux new -s classifier
 docker compose up -d --build
 until curl -fsS http://127.0.0.1:8000/ready; do sleep 10; done
 ```
 
-The first start downloads the model into the `models` volume. On a slow network run the wait loop in `tmux` or `screen`; if `llm` became unhealthy before the download finished, run `docker compose up -d` again. Then classify the example from the task:
+If `llm` became unhealthy before the download finished, run `docker compose up -d` again. Then classify the example from the task:
 
 ```sh
+export API_KEY=$(sed -n 's/^API_KEY=//p' .env)
 curl -sS -X POST http://127.0.0.1:8000/classify \
   -H "Authorization: Bearer $API_KEY" -H 'content-type: application/json' \
   -d '{"message": "TypeError: Cannot read properties of undefined (reading '"'"'map'"'"')"}'
 ```
 
-After the first successful start set `LLAMA_ARG_OFFLINE=1` in `.env` and run `docker compose up -d`: the model then loads only from the volume, and a changed file on Hugging Face cannot replace it. Set it back to `0` while you change the model.
+After the first successful start set `LLAMA_ARG_OFFLINE=1` in `.env` and run `docker compose up -d`: the model then loads only from the volume, and a changed file on Hugging Face cannot replace it.
 
 ### 5. Start after a reboot
 
-Both services have `restart: unless-stopped`, and the Docker service starts on boot, so the stack comes back by itself. `api` waits until `llm` is healthy; after a reboot wait for `/ready` the same way as after the first start. To check, reboot and run:
+Both services have `restart: unless-stopped` and the Docker service starts on boot, so the stack comes back by itself ([restart policies](https://docs.docker.com/engine/containers/start-containers-automatically/)). After a reboot Docker starts both containers at once, without the order Compose keeps on `up`, so `api` answers 503 `llm_unavailable` until `llm` has loaded the model. Wait for `/ready`:
 
 ```sh
 until curl -fsS http://127.0.0.1:8000/ready; do sleep 10; done
 docker compose ps
-docker inspect -f '{{.Name}} restarts={{.RestartCount}}' $(docker compose ps -q)
 ```
 
-`docker compose stop` keeps the containers but they stay stopped after a reboot until `docker compose up -d`; `docker compose down` removes them (the `models` volume stays). A `llm` process that hangs without exiting is not restarted automatically: `docker compose restart llm`.
+`docker compose ps` should show both services up with a start time after the reboot. `docker compose stop` keeps the containers, but they stay stopped after a reboot until `docker compose start` or `up -d`; `docker compose down` removes them (the `models` volume stays). A `llm` process that hangs without exiting is not restarted automatically: `docker compose restart llm`.
 
 ### 6. Access from outside
 
-Keep `API_BIND=127.0.0.1` and put a reverse proxy with TLS on the host. Ports published by Docker bypass ufw rules ([Docker and ufw](https://docs.docker.com/engine/network/packet-filtering-firewalls/#docker-and-ufw)), so publishing `api` on `0.0.0.0` would expose it even with ufw on. With [Caddy](https://caddyserver.com/docs/caddyfile/directives/reverse_proxy) the Caddyfile is:
+Do not open the service to the network while `API_KEY` is empty: without a key `/classify` and `/v1/*` accept anyone. Keep `API_BIND=127.0.0.1` and put a reverse proxy with TLS on the host. Ports published by Docker bypass ufw rules ([Docker and ufw](https://docs.docker.com/engine/network/packet-filtering-firewalls/#docker-and-ufw)), so publishing `api` on `0.0.0.0` would expose it even with ufw on.
+
+[Install Caddy](https://caddyserver.com/docs/install) from its apt repository, point a DNS record of your domain to the server, and put this into `/etc/caddy/Caddyfile`; Caddy gets the certificate itself once ports 80 and 443 are open:
 
 ```
 classifier.example.com {
-	reverse_proxy 127.0.0.1:8000 {
-		transport http {
-			read_timeout 180s
-			write_timeout 180s
-		}
-	}
+	reverse_proxy 127.0.0.1:8000
 }
 ```
 
-The proxy timeouts must be longer than `QUEUE_TIMEOUT_S + REQUEST_TIMEOUT_S` (150 s by default). Before enabling ufw allow SSH, then HTTP and HTTPS:
+```sh
+sudo systemctl reload caddy
+```
+
+Caddy has no upstream timeout by default ([reverse_proxy](https://caddyserver.com/docs/caddyfile/directives/reverse_proxy)). If you set one, keep it above `QUEUE_TIMEOUT_S + REQUEST_TIMEOUT_S` (150 s by default). Before enabling ufw allow SSH, then HTTP and HTTPS:
 
 ```sh
 sudo ufw allow OpenSSH
-sudo ufw allow 80,443/tcp
+sudo ufw allow 80/tcp
+sudo ufw allow 443/tcp
 sudo ufw enable
 ```
+
+Check from outside with `curl -fsS https://classifier.example.com/ready`.
 
 ### 7. Change the model
 
 ```sh
 cp .env .env.bak
-# edit MODEL_ALIAS, LLAMA_ARG_HF_REPO, LLAMA_ARG_HF_FILE, LLM_DISABLE_THINKING, LLAMA_ARG_OFFLINE=0
+# edit MODEL_ALIAS, LLAMA_ARG_HF_REPO, LLAMA_ARG_HF_FILE, LLM_DISABLE_THINKING and set LLAMA_ARG_OFFLINE=0
 docker compose up -d
 until curl -fsS http://127.0.0.1:8000/ready; do sleep 10; done
 ```
 
-To roll back, restore `.env.bak` and run `docker compose up -d`. Old model files stay in the volume; check its size with `docker system df -v` and remove a model by deleting its directory inside the volume (`docker compose exec llm ls /models`) or drop the whole volume with `docker compose down -v` and let the next start download again. For a gated model put `HF_TOKEN` in `.env` and pass it to `llm` with a `compose.override.yaml`:
+When the new model answers, set `LLAMA_ARG_OFFLINE=1` again and run `docker compose up -d`. To roll back, restore `.env.bak` and run `docker compose up -d`; the old file is still in the volume, so this works offline. `docker system df -v` shows the size of the volume. To free space, delete the old file shown by `docker compose exec llm ls -R /models` while `llm` runs. `docker compose down -v` deletes the whole volume with every model, cannot be undone, and makes the next start download again.
+
+For a gated model, request access on its Hugging Face page, put a read token into `.env` as `HF_TOKEN=...` and pass it to `llm` with a `compose.override.yaml` next to `compose.yaml` (Compose reads it by default; the file is in `.gitignore`):
 
 ```yaml
 services:
@@ -316,9 +332,11 @@ services:
       HF_TOKEN: ${HF_TOKEN}
 ```
 
+Commands that name their files with `-f`, like the debug command in [Reproducing](#reproducing), skip the override unless it is added as one more `-f compose.override.yaml`.
+
 ### 8. Update
 
-Code: `git pull` and `docker compose up -d --build`. The llama.cpp image is pinned by digest in `compose.yaml` and the `python` base image in `Dockerfile`; to update them, pull the new image, read its digest with `docker image inspect --format '{{index .RepoDigests 0}}' <image>` and edit the file.
+Code: `git pull`, then `diff .env.example .env` to see new variables (a missing required variable stops `docker compose` with a message), and `docker compose up -d --build`. The llama.cpp image is pinned as tag and digest in `compose.yaml` and the `python` base image by digest in `Dockerfile`; to update one, pull the new image, read its digest with `docker image inspect --format '{{index .RepoDigests 0}}' <image>`, and replace the part after `@sha256:` (the tag stays in front for readers).
 
 ### 9. Logs and common failures
 
