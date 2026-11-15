@@ -73,6 +73,8 @@ class Stack:
         self.calls: list[Call] = []
         self.latency_s = 0.1
         self.posts: list[str] = []
+        self.api_auth: list[str | None] = []  # Authorization seen by /classify and /ready
+        self.llm_auth: list[str | None] = []  # Authorization seen by llama-server
         self.timeouts: list[dict[str, float | None]] = []
         self.inflight = 0
         self.inflight_log: list[int] = []
@@ -123,6 +125,7 @@ class Stack:
         return httpx.Response(200, json={"category": "other", "model": "m-test"})
 
     def _ready(self, request: httpx.Request) -> httpx.Response:
+        self.api_auth.append(request.headers.get("authorization"))
         if "ready" in self.unchecked and self.down_seen:
             self.unchecked.discard("ready")
             return httpx.Response(200 if self.alive_after_down else 503)
@@ -133,6 +136,7 @@ class Stack:
         return httpx.Response(status, json={"status": "ready"})
 
     def _health(self, request: httpx.Request) -> httpx.Response:
+        self.llm_auth.append(request.headers.get("authorization"))
         if "health" in self.unchecked and self.down_seen:
             self.unchecked.discard("health")
             return httpx.Response(200 if self.alive_after_down else 503)
@@ -140,6 +144,7 @@ class Stack:
         return httpx.Response(503 if self.health_calls <= self.health_after else 200)
 
     def _metrics(self, request: httpx.Request) -> httpx.Response:
+        self.llm_auth.append(request.headers.get("authorization"))
         if self.metrics_status != 200:
             return httpx.Response(self.metrics_status)
         busy = self.busy_always or self.busy_polls > 0
@@ -151,6 +156,7 @@ class Stack:
         return httpx.Response(200, text="\n".join(lines) + "\n")
 
     async def _classify(self, request: httpx.Request) -> httpx.Response:
+        self.api_auth.append(request.headers.get("authorization"))
         self.posts.append(json.loads(request.content)["message"])
         n = len(self.posts)
         self.timeouts.append(request.extensions["timeout"])

@@ -206,6 +206,7 @@ Package `error_classifier`. `Status` shows what exists now.
 | MAX_REQUEST_BYTES | 262144 | Largest request body, not less than 12 times `MAX_INPUT_CHARS` plus 64 |
 | MAX_OUTPUT_TOKENS | 256 | Token limit of the model answer, 16 to 2048 |
 | LLM_TEMPERATURE | 0.0 | Sampling temperature, 0 to 2 |
+| API_KEY | empty | Access key: when set, `/classify` and `/v1/*` need `Authorization: Bearer <API_KEY>` and answer 401 `unauthorized` otherwise; printable ASCII without spaces; `/health` and `/ready` stay open |
 | LLM_DISABLE_THINKING | false | Sends `chat_template_kwargs` with `enable_thinking: false` for models that think |
 
 ## Error codes
@@ -221,6 +222,7 @@ Every error has the shape `{"error": {"code": "...", "message": "...", "type": "
 | llm_unavailable | 503 | The runtime is unreachable, still loading the model, or failing |
 | queue_full | 429 | All model slots are busy and the queue is full, or no slot became free within `QUEUE_TIMEOUT_S`; the answer carries `Retry-After` |
 | model_not_found | 404 | The `model` field or the `/v1/models/{model}` path names a model other than the served one |
+| unauthorized | 401 | `API_KEY` is set and the request has no matching `Authorization: Bearer` header; the answer carries `WWW-Authenticate: Bearer` |
 | not_found | 404 | The path does not exist |
 | method_not_allowed | 405 | The path exists but not for this HTTP method; the answer carries `Allow` |
 | internal_error | 500 | An unexpected error in the service |

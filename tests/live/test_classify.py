@@ -8,6 +8,8 @@ import time
 import httpx
 import pytest
 
+from live.auth import HEADERS
+
 # Read at import, before the autouse clean_env fixture runs.
 API_URL = os.environ.get("API_URL", "http://127.0.0.1:8000")
 
@@ -18,7 +20,9 @@ PRINTABLE_ASCII = re.compile(r"[\x20-\x7E]+")
 
 def _classify(label: str, message: str) -> httpx.Response:
     started = time.perf_counter()
-    response = httpx.post(f"{API_URL}/classify", json={"message": message}, timeout=300)
+    response = httpx.post(
+        f"{API_URL}/classify", json={"message": message}, headers=HEADERS, timeout=300
+    )
     elapsed = round(time.perf_counter() - started, 1)
     # One line per case for the run log; read it with pytest -s.
     print(

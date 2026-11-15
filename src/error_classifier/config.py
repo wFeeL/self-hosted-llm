@@ -1,12 +1,12 @@
 from typing import Literal, Self
 
-from pydantic import Field, field_validator, model_validator
+from pydantic import Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
     # No env_file: compose reads .env and passes variables to the container.
-    model_config = SettingsConfigDict(extra="ignore", frozen=True)
+    model_config = SettingsConfigDict(extra="ignore", frozen=True, hide_input_in_errors=True)
 
     llm_base_url: str = "http://llm:8080/v1"
     llm_model: str = Field(min_length=1)
@@ -21,6 +21,16 @@ class Settings(BaseSettings):
     max_output_tokens: int = Field(default=256, ge=16, le=2048)
     llm_temperature: float = Field(default=0.0, ge=0, le=2)
     llm_disable_thinking: bool = False
+    api_key: SecretStr | None = None
+
+    @field_validator("api_key", mode="after")
+    @classmethod
+    def _check_api_key(cls, value: SecretStr | None) -> SecretStr | None:
+        if value is None or not value.get_secret_value():
+            return None
+        if not all(0x21 <= ord(char) <= 0x7E for char in value.get_secret_value()):
+            raise ValueError("API_KEY must be printable ASCII without spaces")
+        return value
 
     @field_validator("llm_base_url", mode="after")
     @classmethod
