@@ -10,7 +10,7 @@ docker compose up -d
 until curl -fsS http://127.0.0.1:8000/ready; do sleep 5; done
 ```
 
-- The first start downloads about 2.1 GB of model weights into the `models` volume; watch it with `docker compose logs -f llm`.
+- The first start downloads about 1.4 GB of model weights into the `models` volume; watch it with `docker compose logs -f llm`.
 - If the loop keeps waiting, check `docker compose ps` and `docker compose logs llm`; an unhealthy `llm` keeps `api` from starting.
 - Every `docker compose` command needs `.env` to be present.
 - If the network is slow and `llm` becomes unhealthy before the download ends, run `docker compose up -d` again after the download, or raise `LLM_START_PERIOD` in `.env`.
@@ -25,13 +25,13 @@ until curl -fsS http://127.0.0.1:8000/ready; do sleep 5; done
 curl -sS -X POST http://127.0.0.1:8000/classify -H 'content-type: application/json' -d '{"message": "TypeError: Cannot read properties of undefined (reading '"'"'map'"'"')"}'
 ```
 
-Response from the stack described above:
+Response of the stack when Granite 4.1 3B was its model (the default is now Qwen3.5-2B, whose wording differs):
 
 ```
 {"category":"runtime_error","severity":"medium","summary":"The code tried to call map on a value that is undefined, causing a TypeError.","suggested_action":"Verify that the variable before map is properly initialized and not null or undefined before calling the method.","model":"granite-4.1-3b-q4km","latency_ms":6780,"truncated":false}
 ```
 
-- An answer takes several seconds on CPU: this one took 6.8 s, and long inputs take up to about a minute.
+- An answer takes several seconds on CPU: this one took 6.8 s. A 3000-character input took 25 s with the default model and 71 s with Qwen3-4B in the benchmarks.
 - `summary` and `suggested_action` are always in English, even for an error text in another language. The example in the task statement is in Russian; this is a deliberate difference.
 - The service talks to the model only through the OpenAI-compatible API of llama-server (`/v1/chat/completions`). The mapping of runtime errors (context overflow, loading state) and the thinking switch are specific to llama-server.
 - Categories, severity levels and error codes are listed in the Classification and Error codes sections below.
@@ -55,7 +55,7 @@ The table applies the evaluation rule to the models whose measured memory fits e
 Not measured: granite-4.0-1b-q4km.
 <!-- vps-table:end -->
 
-- 2 GiB: no measured model fits. Granite 4.0 1B would be the candidate by size, but its memory was not measured and it followed the injection in the evaluation.
+- 2 GiB: no model fits with the default context of 8192 tokens. Even the 0.95 GiB file of Granite 4.0 1B plus the smallest measured runtime memory (1.01 GiB for Qwen3.5-2B) is above the budget, and Granite 4.0 1B also followed the injection in the evaluation.
 - 16 GiB: the same choice as 8 GiB. Models of 7 to 8B parameters were not measured on this machine.
 
 ### Qwen3.5-2B (default)
@@ -70,7 +70,7 @@ LLM_MEM_LIMIT=6g
 ```
 <!-- model-env:qwen3.5-2b-q4km:end -->
 
-The default and the only model that passed the leak check. Fast (p50 4.2 s) and small (2.34 GiB for `llm`), but the least accurate on the strict category.
+The default and the only model that passed the leak check. Fast (p50 4.2 s) and small (2.34 GiB for `llm`), but weaker than Qwen3-4B and Granite 4.1 3B on the strict category (46 of 60).
 
 ### Qwen3-4B-Instruct-2507
 
@@ -84,7 +84,7 @@ LLM_MEM_LIMIT=6g
 ```
 <!-- model-env:qwen3-4b-instruct-2507-q4km:end -->
 
-The most accurate on the set (34 of 60 rows with both fields right) and the slowest (p50 10.2 s). It repeated an email address from one error text, so take it when accuracy matters more than that risk. It needs 5.77 GiB for `llm`, which leaves about 0.2 GiB under `LLM_MEM_LIMIT=6g`; raise the limit if the machine allows.
+The most accurate on the set (34 of 60 rows with both fields right) and the slowest (p50 10.2 s). It repeated an email address from one error text, so take it when accuracy matters more than that risk. Its `llm` container peaked at 5.77 GiB under `LLM_MEM_LIMIT=6g`; the peak includes 2.28 GiB of page cache and is bounded by the limit, while its anonymous memory was 3.06 GiB.
 
 ### Granite 4.1 3B
 
@@ -113,7 +113,7 @@ LLM_MEM_LIMIT=6g
 ```
 <!-- model-env:granite-4.0-1b-q4km:end -->
 
-The smallest file (about 1 GB) and the fastest (p50 3.9 s), with the weakest category accuracy (46 of 60). It followed the injection. Its memory was not measured.
+The smallest file (about 1 GB) and the fastest (p50 3.9 s), with the weakest category accuracy (46 of 60). It followed the injection. It was not benchmarked: its memory, long inputs and concurrency are unknown.
 
 
 ## Architecture
@@ -224,7 +224,7 @@ Every error has the shape `{"error": {"code": "...", "message": "..."}}`.
 
 ## Evaluation
 
-This page describes the labelled set, how it is run against a model, the results of three models and how the default model was chosen from them. The raw results are in `eval/results/`, one JSON file per model, and the tables below are generated from them by `scripts/evaluate.py report`. A test (`tests/test_evaluation_docs.py`) fails if the tables here and the files drift apart, or if the set or the prompt change after the runs.
+This page describes the labelled set, how it is run against a model, the results of four models and how the default model was chosen from them. The raw results are in `eval/results/`, one JSON file per model, and the tables below are generated from them by `scripts/evaluate.py report`. A test (`tests/test_evaluation_docs.py`) fails if the tables here and the files drift apart, or if the set or the prompt change after the runs.
 
 ### The set
 
@@ -240,15 +240,16 @@ The few-shot examples of the prompt are not in the set. `check_dataset` compares
 
 `scripts/evaluate.py run` calls the same `Classifier` the service uses, with the same prompt, schema, validation and retry, directly against llama-server. Between the classifier and the runtime client a recorder keeps every attempt with its raw `content`, `finish_reason` and token counts, so the file shows what the model answered even when the answer was rejected. One warm-up request outside the set fills the prompt cache of the slot; then the rows go one at a time. A runtime that stops answering is waited for up to 60 s and the row is repeated once; otherwise the run stops and is written to a `.partial` file, which `report` refuses.
 
-All three runs used the same settings: temperature 0, `MAX_OUTPUT_TOKENS` 256, `MAX_INPUT_CHARS` 3000, `REQUEST_TIMEOUT_S` 120, context 8192 split into 2 slots, 6 threads, batch 512, Q4_K_M weights. The only difference is `LLM_DISABLE_THINKING=true` for Qwen3.5-2B: llama-server b12352 turns thinking on for it by default, and with the JSON schema the model then spends its token budget on reasoning and returns an empty answer (measured: 783 characters of reasoning, `finish_reason` `length`, empty `content`).
+All four runs used the same settings: temperature 0, `MAX_OUTPUT_TOKENS` 256, `MAX_INPUT_CHARS` 3000, `REQUEST_TIMEOUT_S` 120, context 8192 split into 2 slots, 6 threads, batch 512, Q4_K_M weights. The only difference is `LLM_DISABLE_THINKING=true` for Qwen3.5-2B: llama-server b12352 turns thinking on for it by default, and with the JSON schema the model then spends its token budget on reasoning and returns an empty answer (observed in a separate request before the runs: `finish_reason` `length` and empty `content`; that output is not kept in the repository).
 
 | Model | GGUF | File, bytes |
 |---|---|---|
+| `granite-4.0-1b-q4km` | `ibm-granite/granite-4.0-1b-GGUF`, `granite-4.0-1b-Q4_K_M.gguf` | 1023645440 |
 | `granite-4.1-3b-q4km` | `ibm-granite/granite-4.1-3b-GGUF`, `granite-4.1-3b-Q4_K_M.gguf` | 2099501664 |
 | `qwen3-4b-instruct-2507-q4km` | `bartowski/Qwen_Qwen3-4B-Instruct-2507-GGUF`, `Qwen_Qwen3-4B-Instruct-2507-Q4_K_M.gguf` | 2497280736 |
 | `qwen3.5-2b-q4km` | `bartowski/Qwen_Qwen3.5-2B-GGUF`, `Qwen_Qwen3.5-2B-Q4_K_M.gguf` | 1396198496 |
 
-Hardware: 8 vCPU AMD EPYC Rome (AVX2, no GPU), 15 GB RAM, shared with another project. The `llm` container ran on podman 5.7 with a 6 CPU limit and llama-server `b12352-5676dfbe0`. Each result file records the runtime env of the container, `/props`, the git commit, the hashes of the set and the prompt, and the load average before and after the run. The 1-minute load average before the warm-up was 1.26, 1.30 and 1.49.
+Hardware: 8 vCPU AMD EPYC Rome (AVX2, no GPU), 15 GB RAM, shared with another project. The `llm` container ran on podman 5.7 with a 6 CPU limit and llama-server `b12352-5676dfbe0`. Each result file records the runtime env of the container, `/props`, the git commit, the hashes of the set and the prompt, and the load average before and after the run. The 1-minute load average before the warm-up was 1.47 for Qwen3.5-2B, 1.42 for Granite 4.0 1B, 1.50 for Granite 4.1 3B and 1.20 for Qwen3-4B. The Granite 4.1 3B run started exactly at the threshold of 1.5, so step 3 of the rule would ignore its speed; step 1 decided the choice, so this did not matter.
 
 ### Metrics
 
@@ -311,7 +312,7 @@ Choice by the rule: qwen3.5-2b-q4km (the only model that passed the validity and
 
 ### Reading the results
 
-Four models were run on the same day, one after another: Granite 4.0 1B, Qwen3.5-2B, Granite 4.1 3B and Qwen3-4B-Instruct-2507. All of them returned a valid answer on the first call for every row. The grammar built from the JSON schema leaves little room for broken JSON, so validity does not separate the models; quality and leaks do.
+Four models were run on the same day, one after another: Qwen3.5-2B, Granite 4.0 1B, Granite 4.1 3B and Qwen3-4B-Instruct-2507. All of them returned a valid answer on the first call for every row. The grammar built from the JSON schema leaves little room for broken JSON, so validity does not separate the models; quality and leaks do.
 
 Severity is the hard field. Exact severity ranges from 27 to 38 of 60, while severity within one level is 55 to 59. The texts rarely say how many users are affected, so the models and the labels disagree by one step more often than on the category.
 
@@ -323,7 +324,7 @@ Both Granite models followed the plain injection: for `unk-003` they answered `p
 
 Qwen3.5-2B (p50 4.2 s, 268 s for the whole run) loses most on `resource_error` (4 of 7) and `permission_error` (4 of 7) and is weak on the strict category (46 of 60).
 
-The three models that also ran a day earlier gave the same category and severity on all 60 rows in this run; only their latency changed with the load of the host.
+The three models that also ran a day earlier gave the same category and severity on all 60 rows in this run; only their latency changed with the load of the host. The earlier result files are not kept in the repository.
 
 ### The choice
 
@@ -346,8 +347,8 @@ The price is accuracy. Qwen3-4B got both fields right in 10 more rows, and if it
 - The quantizers differ: IBM for both Granite models, bartowski (imatrix) for both Qwen models.
 - Latency was measured on podman on a shared machine, on short inputs only, while another project's stack was running. Benchmarks of the whole service are in the next section.
 - Seven secret rows show leaks when they happen; zero leaks on seven rows does not prove a model never leaks. For Granite 4.0 1B and Qwen3-4B one row decided the exclusion, and those rows were not repeated, so whether the leak happens every time is not known.
-- Temperature 0 is not bit-exact here. An earlier repeat run of Qwen3.5-2B changed the labels of 3 of 60 rows (`py-007`, `infra-009`, `ru-002`) with the same score of 24 rows with both fields right. The cause is assumed to be the prompt cache and batch boundaries of llama-server; differences of a few rows between models are within this as well.
-- Models of 7 to 8B parameters were not evaluated: on this shared 8 vCPU machine a run of Qwen3-8B took most of the CPU and about 10 GiB of RAM and was stopped.
+- Temperature 0 is not bit-exact here. An earlier repeat run of Qwen3.5-2B, whose file is not kept, changed the labels of 3 of 60 rows (`py-007`, `infra-009`, `ru-002`) with the same score of 24 rows with both fields right. The cause is assumed to be the prompt cache and batch boundaries of llama-server; differences of a few rows between models are within this as well.
+- Models of 7 to 8B parameters were not evaluated: on this shared 8 vCPU machine a run of Qwen3-8B took most of the CPU and was stopped. In a single request before it (output not kept), at an 8 GiB container limit, the kernel was already evicting its weights from memory (anonymous memory 4.32 GiB).
 
 ### Reproducing
 
@@ -362,7 +363,7 @@ LLM_BASE_URL=http://127.0.0.1:8080/v1 LLM_MODEL=$MODEL_ALIAS \
 uv run python scripts/evaluate.py report eval/results/*.json
 ```
 
-`--limit 3` makes a short smoke run into a `.partial` file. A full run takes 4 to 10 minutes per model on the machine above.
+`--limit 3` makes a short smoke run into a `.partial` file. A full run took 4 to 13 minutes per model on the machine above.
 
 ## Benchmarks
 
@@ -407,7 +408,7 @@ Engine: podman, podman version 5.7.0; 8 vCPU x86_64; llm threads 6, context 8192
 How to read the tables:
 
 - Latency is wall time of one `POST /classify` from the client, including the queue, both attempts and the API. Generation and prompt speeds come from the llama-server counters for the 20-request series.
-- `CPU llm, %` is the CPU time of the `llm` container over the 20-request series divided by wall time, where 100% is one core. With `LLM_CPUS=6` and 6 threads the runtime used 5.3 to 5.8 cores in that series and about 5.2 in the other phases.
+- `CPU llm, %` is the CPU time of the `llm` container over the 20-request series divided by wall time, where 100% is one core. With `LLM_CPUS=6` and 6 threads the runtime used 5.3 to 5.8 cores in that series and 5.2 to 5.7 in the other phases.
 - `RAM floor` is the largest anonymous memory of `llm` (the process, its buffers and the KV cache). `RAM, conservative` adds the whole GGUF file, as if every page of the file stayed in the page cache; it can count the weights twice when the runtime also keeps them in anonymous memory, which is likely for Granite, whose anonymous memory (2.34 GiB) is larger than its file (1.96 GiB). The measured peak of the container can still be higher, because the page cache also holds other files. `RAM, worst` adds the file to the peak. `llm need` in the last table is the larger of the conservative value and the measured peak, and the requirements below use it.
 - The queue probe sends more requests than the service accepts; at least one is refused at once with 429, as configured.
 
@@ -421,11 +422,11 @@ For the default model (Qwen3.5-2B, Q4_K_M):
 | RAM | 2.34 GiB for `llm` and 0.10 GiB for `api` (`llm need` and `api peak`) | last table |
 | Disk | 1.0 GiB for the two images and 1.3 GiB for the model file; every other model adds its GGUF to the `models` volume | memory table |
 
-Qwen3-4B needs 5.77 GiB for `llm` and Granite 4.1 3B 4.29 GiB by the same measure. With the default `LLM_MEM_LIMIT=6g`, Qwen3-4B peaked at 5.77 GiB, so it has about 0.2 GiB to spare; give it a larger limit on a machine that allows one. Speed on machines with fewer cores was not measured.
+Qwen3-4B needs 5.77 GiB for `llm` and Granite 4.1 3B 4.29 GiB by the same measure. With the default `LLM_MEM_LIMIT=6g`, Qwen3-4B peaked at 5.77 GiB; the peak includes 2.28 GiB of page cache and is bounded by the limit, so it does not show how close the model is to running out of memory (its anonymous memory was 3.06 GiB). Speed on machines with fewer cores was not measured.
 
 ### Limitations of the measurements
 
-- All numbers come from podman on a shared host, not from Docker on a dedicated one. Every run had the 11 containers of the other project up; the load average at the start of each run is in the first table. A first run of the default model had single requests several times slower than the median and was repeated; the repeat started at a load average of 1.28 and still has single requests up to 21.6 s in the 50-request series, so the tail of the latency is partly the host.
+- All numbers come from podman on a shared host, not from Docker on a dedicated one. Every run had the 11 containers of the other project up; the load average at the start of each run is in the first table. A first run of the default model, whose file is not kept, had single requests several times slower than the median and was repeated; the repeat started at a load average of 1.28 and still has single requests up to 21.6 s in the 50-request series, so the tail of the latency is partly the host.
 - Inputs are short error messages (up to a few hundred characters). One long input per model is measured, not a series of them.
 - Concurrency stops at two clients, which is the number of runtime slots.
 - Only the default model ran the 50-request series; the other two skip it to keep each run under 15 minutes.
