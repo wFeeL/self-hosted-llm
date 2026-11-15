@@ -1,27 +1,22 @@
-import asyncio
-import json
 import os
 from collections import Counter
-from collections.abc import Callable, Iterator, Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 
 import httpx
 import pytest
-import respx
+from bench_fakes import API_ENV, COMPOSE, LLM_ENV, Stack, make_plan
 
 from error_classifier.benchmark.records import RequestRecord
 from error_classifier.benchmark.runner import (
     BenchUnavailable,
     CommandResult,
-    Plan,
     RunResult,
-    Target,
     bench_inputs,
     cgroup_file,
     long_input,
     read_env,
     restart_count,
-    run_bench,
     subprocess_runner,
 )
 from error_classifier.evaluation.dataset import DEFAULT_DATASET, load_dataset
@@ -29,197 +24,6 @@ from error_classifier.evaluation.dataset import DEFAULT_DATASET, load_dataset
 pytestmark = pytest.mark.anyio
 
 ROOT = Path(__file__).resolve().parents[1]
-API = "http://api.test"
-LLM = "http://llm.test"
-FILES = ("compose.yaml", "compose.debug.yaml")
-TARGET = Target(
-    engine="podman",
-    api_url=API,
-    llm_url=LLM,
-    llm_container="llm_c",
-    api_container="api_c",
-    compose_files=FILES,
-)
-COMPOSE = ["podman", "compose", "-f", "compose.yaml", "-f", "compose.debug.yaml"]
-API_ENV = {
-    "MAX_CONCURRENCY": "2",
-    "MAX_QUEUE": "4",
-    "QUEUE_TIMEOUT_S": "30",
-    "REQUEST_TIMEOUT_S": "120",
-    "LLM_MODEL": "m-test",
-}
-LLM_ENV = {"LLAMA_ARG_OFFLINE": "1", "LLAMA_ARG_THREADS": "6"}
-
-
-def make_plan(
-    *, cold_start: bool = False, skip_sequential: bool = False, max_s: float = 1e9
-) -> Plan:
-    return Plan(
-        inputs=[(f"id{i}", f"text {i}") for i in range(20)],
-        long_text="L" * 3000,
-        cold_start=cold_start,
-        skip_sequential=skip_sequential,
-        max_s=max_s,
-    )
-
-
-class Clock:
-    def __init__(self) -> None:
-        self.now = 1000.0
-        self.sleeps: list[float] = []
-        self.pause = 0.0  # real seconds, lets the engine thread of a cold start finish
-
-    def __call__(self) -> float:
-        return self.now
-
-    async def sleep(self, seconds: float) -> None:
-        self.sleeps.append(seconds)
-        self.now += seconds
-        await asyncio.sleep(self.pause)
-
-
-class Call:
-    def __init__(self, args: Sequence[str], env: Mapping[str, str] | None, timeout_s: float):
-        self.args = list(args)
-        self.env = env
-        self.timeout_s = timeout_s
-
-
-class Stack:
-    """Fake API, fake llama-server and fake engine commands sharing one clock."""
-
-    def __init__(self, router: respx.MockRouter) -> None:
-        self.clock = Clock()
-        self.calls: list[Call] = []
-        self.latency_s = 0.1
-        self.posts: list[str] = []
-        self.timeouts: list[dict[str, float | None]] = []
-        self.inflight = 0
-        self.inflight_log: list[int] = []
-        self.counters = {
-            "prompt_tokens_total": 0.0,
-            "prompt_tokens_cached_total": 0.0,
-            "prompt_seconds_total": 0.0,
-            "tokens_predicted_total": 0.0,
-            "tokens_predicted_seconds_total": 0.0,
-        }
-        self.mode: Callable[[int], httpx.Response] = self._ok
-        self.restarts = 0
-        self.restart_at: int | None = None
-        self.negative_at: int | None = None
-        self.busy_polls = 0  # next N /metrics calls report a busy slot
-        self.busy_always = False
-        self.metrics_status = 200
-        self.health_after = 0  # calls answered 503 before the first 200
-        self.ready_after = 0
-        self.ready_error: Exception | None = None
-        self.health_calls = 0
-        self.ready_calls = 0
-        self.up_code = 0
-        self.api_env: dict[str, str] | None = dict(API_ENV)
-        self.llm_env: dict[str, str] | None = dict(LLM_ENV)
-        self.cgroup_code = 0
-        self.cpu = {"llm_c": 0, "api_c": 0}
-        router.get(f"{API}/ready").mock(side_effect=self._ready)
-        router.get(f"{LLM}/health").mock(side_effect=self._health)
-        router.get(f"{LLM}/metrics").mock(side_effect=self._metrics)
-        router.post(f"{API}/classify").mock(side_effect=self._classify)
-
-    def _ok(self, n: int) -> httpx.Response:
-        return httpx.Response(200, json={"category": "other", "model": "m-test"})
-
-    def _ready(self, request: httpx.Request) -> httpx.Response:
-        self.ready_calls += 1
-        if self.ready_error is not None:
-            raise self.ready_error
-        status = 503 if self.ready_calls <= self.ready_after else 200
-        return httpx.Response(status, json={"status": "ready"})
-
-    def _health(self, request: httpx.Request) -> httpx.Response:
-        self.health_calls += 1
-        return httpx.Response(503 if self.health_calls <= self.health_after else 200)
-
-    def _metrics(self, request: httpx.Request) -> httpx.Response:
-        if self.metrics_status != 200:
-            return httpx.Response(self.metrics_status)
-        busy = self.busy_always or self.busy_polls > 0
-        self.busy_polls = max(0, self.busy_polls - 1)
-        lines = ["# HELP llamacpp:requests_processing Number of requests processing."]
-        lines.append("# TYPE llamacpp:requests_processing gauge")
-        lines.append(f"llamacpp:requests_processing {1 if busy else 0}")
-        lines.extend(f"llamacpp:{k} {v}" for k, v in self.counters.items())
-        return httpx.Response(200, text="\n".join(lines) + "\n")
-
-    async def _classify(self, request: httpx.Request) -> httpx.Response:
-        self.posts.append(json.loads(request.content)["message"])
-        n = len(self.posts)
-        self.timeouts.append(request.extensions["timeout"])
-        self.inflight += 1
-        self.inflight_log.append(self.inflight)
-        await asyncio.sleep(0)
-        self.inflight -= 1
-        self.clock.now += self.latency_s
-        self.counters["prompt_tokens_total"] += 100
-        self.counters["prompt_tokens_cached_total"] += 20
-        self.counters["prompt_seconds_total"] += 0.5
-        self.counters["tokens_predicted_total"] += 10
-        self.counters["tokens_predicted_seconds_total"] += 1.0
-        if n == self.negative_at:
-            self.counters["prompt_tokens_total"] -= 5000
-        if n == self.restart_at:
-            self.restarts += 1
-        return self.mode(n)
-
-    def runner(
-        self, args: Sequence[str], *, env: Mapping[str, str] | None = None, timeout_s: float = 60.0
-    ) -> CommandResult:
-        self.calls.append(Call(args, env, timeout_s))
-        engine_command = args[1]
-        if engine_command == "compose":
-            code = self.up_code if "up" in args else 0
-            return CommandResult(code, "")
-        container = args[-1]
-        if engine_command == "inspect":
-            template = args[3]
-            if template == "{{.RestartCount}}":
-                return CommandResult(0, f"{self.restarts}\n")
-            env_map = self.api_env if container == "api_c" else self.llm_env
-            if env_map is None:
-                return CommandResult(1, "")
-            return CommandResult(0, json.dumps([f"{k}={v}" for k, v in env_map.items()]))
-        if engine_command == "exec":
-            return self._cat(args[2], args[-1].rsplit("/", 1)[-1])
-        return CommandResult(1, "")
-
-    def _cat(self, container: str, name: str) -> CommandResult:
-        if self.cgroup_code:
-            return CommandResult(self.cgroup_code, "")
-        if name == "cpu.stat":
-            self.cpu[container] += 1_000_000
-            return CommandResult(0, f"usage_usec {self.cpu[container]}\nuser_usec 5\n")
-        if name == "memory.current":
-            return CommandResult(0, "5000\n")
-        return CommandResult(0, "anon 3000\nfile 700\n")
-
-    async def run(
-        self, plan: Plan | None = None, *, on_record: Callable[[RequestRecord], None] | None = None
-    ) -> RunResult:
-        async with httpx.AsyncClient() as http:
-            return await run_bench(
-                TARGET,
-                plan or make_plan(),
-                run=self.runner,
-                http=http,
-                clock=self.clock,
-                sleep=self.clock.sleep,
-                on_record=on_record,
-            )
-
-
-@pytest.fixture
-def stack() -> Iterator[Stack]:
-    with respx.mock(assert_all_called=False) as router:
-        yield Stack(router)
 
 
 def by_phase(result: RunResult) -> Counter[str]:
@@ -254,6 +58,16 @@ async def test_full_run_without_cold_start(stack: Stack) -> None:
     # Timeout is QUEUE_TIMEOUT_S + REQUEST_TIMEOUT_S + 30, D1.
     assert {t["read"] for t in stack.timeouts} == {180.0}
     assert stack.posts[:3] == ["text 0", "text 1", "text 2"]
+
+
+async def test_phases_are_announced_before_they_start(stack: Stack) -> None:
+    names: list[str] = []
+    await stack.run(make_plan(skip_sequential=True), on_phase=names.append)
+    assert names == ["warmup", "series", "long", "parallel", "queue"]
+
+    stopped: list[str] = []
+    await stack.run(make_plan(max_s=0), on_phase=stopped.append)
+    assert stopped == ["warmup"]
 
 
 async def test_series_records_carry_tokens_and_timing(stack: Stack) -> None:

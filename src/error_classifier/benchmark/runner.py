@@ -398,6 +398,7 @@ async def run_bench(
     clock: Callable[[], float] = time.perf_counter,
     sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
     on_record: Callable[[RequestRecord], None] | None = None,
+    on_phase: Callable[[Phase], None] | None = None,
 ) -> RunResult:
     bench = _Bench(target, run, http, clock, sleep, on_record)
     cold: ColdStart | None = None
@@ -443,6 +444,8 @@ async def run_bench(
         if measured and clock() - bench.start >= plan.max_s:
             stop = "time_limit"
             break
+        if on_phase is not None:
+            on_phase(phase)
         if measured:
             await bench.take_reading(phase, "start")
         await body()
