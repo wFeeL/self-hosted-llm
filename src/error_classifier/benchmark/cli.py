@@ -31,7 +31,9 @@ from error_classifier.benchmark.report import (
     write_bench,
 )
 from error_classifier.benchmark.runner import (
+    SEQUENTIAL_ROWS,
     SLOW_COMMAND_TIMEOUT_S,
+    WARMUP_ROWS,
     BenchUnavailable,
     Plan,
     Runner,
@@ -60,8 +62,6 @@ API_ENV_KEYS: Final = (
     "LLM_DISABLE_THINKING",
 )
 HAWK_PREFIX: Final = "hawkstand_"
-WARMUP_ROWS: Final = 3
-SEQUENTIAL_ROWS: Final = 50
 
 
 def _err(text: str) -> None:
@@ -209,7 +209,7 @@ def _run(
         compose = [engine, "compose", *(a for f in files for a in ("-f", f))]
         built = run([*compose, "build", "api"], timeout_s=SLOW_COMMAND_TIMEOUT_S)
         if built.code != 0:
-            _err("compose build api failed")
+            _err(f"compose build api failed: {built.stderr_tail.strip()}")
             return 3
     started_at = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
     git_sha, git_dirty = git_state(Path.cwd())
@@ -294,6 +294,7 @@ def _run(
             llm_file=llm_stat.get("file"),
             api_peak=api_peak,
             api_anon=api_stat.get("anon"),
+            api_file=api_stat.get("file"),
         ),
         aggregates=aggregate(result.records, result.readings),
     )
@@ -303,6 +304,8 @@ def _run(
     if result.complete:
         return 0
     _err(f"run stopped: {result.stop_reason}, wrote {path}")
+    if result.failure_detail:
+        _err(result.failure_detail.strip())
     return 4
 
 

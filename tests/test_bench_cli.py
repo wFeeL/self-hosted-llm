@@ -131,7 +131,7 @@ def test_run_writes_a_complete_file(
     assert bench.summary.cold_start is None
     memory = bench.summary.memory
     assert (memory.llm_peak, memory.llm_anon, memory.llm_file) == (9000, 3000, 700)
-    assert (memory.api_peak, memory.api_anon) == (9000, 3000)
+    assert (memory.api_peak, memory.api_anon, memory.api_file) == (9000, 3000, 700)
     assert bench.summary.aggregates == aggregate(bench.records, bench.readings)
     assert bench.summary.aggregates.series.n_ok == 20
     assert len(bench.records) == 101
@@ -183,13 +183,30 @@ def test_cold_start_builds_then_restarts_the_stack(stack: Stack, tmp_path: Path)
     assert bench.summary.cold_start.ready_s == 0
 
 
-def test_failed_build_stops_before_the_stack_is_touched(stack: Stack, tmp_path: Path) -> None:
+def test_failed_build_stops_before_the_stack_is_touched(
+    stack: Stack, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
     stack.build_code = 1
+    stack.build_stderr = "pip: no network"
     code, _ = run_cli(stack, tmp_path / "out", "--cold-start")
 
     assert code == 3
+    assert "pip: no network" in capsys.readouterr().err
     assert not (tmp_path / "out").exists()
     assert all("down" not in c.args for c in stack.calls)
+
+
+def test_failed_cold_start_prints_the_error_tail(
+    stack: Stack, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    stack.down_code = 1
+    stack.down_stderr = "no such pod"
+    code, _ = run_cli(stack, tmp_path / "out", "--cold-start")
+
+    assert code == 4
+    err = capsys.readouterr().err
+    assert "run stopped: cold_start_failed" in err
+    assert "no such pod" in err
 
 
 def test_unreachable_api_gives_code_3_and_no_file(

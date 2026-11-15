@@ -1,11 +1,12 @@
 from pathlib import Path
 
 import pytest
-from bench_files import EXPECTED, alpha, bench_file, beta, config
+from bench_files import EXPECTED, alpha, bench_file, beta, config, rows
 
 from error_classifier.benchmark.records import CgroupReading, Reading, RequestRecord
 from error_classifier.benchmark.report import (
     BenchFile,
+    Summary,
     read_bench,
     render_bench_report,
     write_bench,
@@ -33,6 +34,39 @@ def test_report_refuses_different_inputs_and_engines() -> None:
         render_bench_report([alpha(), bench_file("beta", conf={"inputs_sha256": "other"})])
     with pytest.raises(ValueError, match="engine"):
         render_bench_report([alpha(), bench_file("beta", conf={"engine": "docker"})])
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("llm_image_id", "sha-other"),
+        ("cpu_count", 4),
+        ("machine", "aarch64"),
+        ("compose_version", "podman-compose version 9"),
+    ],
+)
+def test_report_refuses_different_stacks_and_machines(field: str, value: object) -> None:
+    first = bench_file("alpha", conf={"llm_image_id": "sha-a"})
+    second = bench_file("beta", conf={"llm_image_id": "sha-a", field: value})
+    with pytest.raises(ValueError, match=field.replace("_", " ")):
+        render_bench_report([first, second])
+
+
+def test_report_accepts_different_api_images() -> None:
+    first = bench_file("alpha", conf={"api_image_id": "sha-1"})
+    second = bench_file("beta", conf={"api_image_id": "sha-2"})
+    assert "| beta |" in render_bench_report([first, second])
+
+
+def test_report_refuses_records_that_do_not_match_the_planned_phases() -> None:
+    short = bench_file("beta")
+    short = BenchFile(short.records[:-1], short.readings, short.summary)
+    with pytest.raises(ValueError, match=r"beta.*series.*19.*20"):
+        render_bench_report([alpha(), short])
+    extra = bench_file("beta", conf={"phases": {"series": 20, "queue": 7}})
+    extra = BenchFile(rows({"series": 20}), extra.readings, extra.summary)
+    with pytest.raises(ValueError, match=r"beta.*queue"):
+        render_bench_report([alpha(), extra])
 
 
 def test_report_refuses_different_runtime_settings() -> None:
@@ -129,3 +163,9 @@ def test_partial_file_is_readable_but_not_reportable(tmp_path: Path) -> None:
     assert loaded.summary.config.stop_reason == "time_limit"
     with pytest.raises(ValueError, match="incomplete"):
         render_bench_report([loaded])
+
+
+def test_summary_without_api_file_still_reads() -> None:
+    data = alpha().summary.model_dump(mode="json")
+    del data["memory"]["api_file"]
+    assert Summary.model_validate(data).memory.api_file is None

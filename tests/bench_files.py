@@ -7,6 +7,7 @@ from error_classifier.benchmark.aggregate import (
     QueueStats,
     SpeedStats,
 )
+from error_classifier.benchmark.records import RequestRecord
 from error_classifier.benchmark.report import BenchConfig, BenchFile, Memory, Summary
 from error_classifier.benchmark.runner import ColdStart
 
@@ -87,6 +88,26 @@ def aggregates(**changes: object) -> Aggregates:
     return base.model_copy(update=changes)
 
 
+def rows(phases: dict[str, int]) -> list[RequestRecord]:
+    return [
+        RequestRecord(
+            phase=phase,  # pyright: ignore[reportArgumentType]
+            index=i,
+            client=0,
+            item_id=f"id{i}",
+            started_s=float(i),
+            status=200,
+            outcome="ok",
+            wall_ms=1000,
+            prompt_tokens=None,
+            cached_tokens=None,
+            completion_tokens=None,
+        )
+        for phase, n in phases.items()
+        for i in range(n)
+    ]
+
+
 def bench_file(
     model: str,
     conf: dict[str, object] | None = None,
@@ -98,10 +119,17 @@ def bench_file(
         config=config(model, **(conf or {})),
         cold_start=cold_start,
         memory=memory
-        or Memory(llm_peak=3 * GIB, llm_anon=GIB, llm_file=GIB, api_peak=None, api_anon=None),
+        or Memory(
+            llm_peak=3 * GIB,
+            llm_anon=GIB,
+            llm_file=GIB,
+            api_peak=None,
+            api_file=None,
+            api_anon=None,
+        ),
         aggregates=aggregates(**(agg or {})),
     )
-    return BenchFile(records=[], readings=[], summary=summary)
+    return BenchFile(records=rows(summary.config.phases), readings=[], summary=summary)
 
 
 def alpha() -> BenchFile:
@@ -124,13 +152,24 @@ def alpha() -> BenchFile:
                 memory_before=GIB,
                 memory_after=GIB + GIB // 2,
             ),
+            "sequential_all": lat(49, 4050, 5100, 5300, http_502=1),
             "parallel": lat(19, 7000, 8000, 8000, queue_full=1),
-            "queue": QueueStats(n=7, immediate_429=2, timeout_429=1, outcomes={}),
+            "queue": QueueStats(
+                n=7,
+                immediate_429=2,
+                timeout_429=1,
+                outcomes={"ok": 3, "queue_full": 3, "runtime_busy": 1},
+            ),
             "cpu": {"series": PhaseCpu(llm_percent=560.0, api_percent=1.0)},
             "llm_anon_max": 3 * GIB,
         },
         memory=Memory(
-            llm_peak=4 * GIB, llm_anon=2 * GIB, llm_file=2**29, api_peak=2**28, api_anon=None
+            llm_peak=4 * GIB,
+            llm_anon=2 * GIB,
+            llm_file=2**29,
+            api_peak=2**28,
+            api_file=2**27,
+            api_anon=None,
         ),
         cold_start=ColdStart(health_s=12.04, ready_s=22.0),
     )
@@ -150,7 +189,14 @@ def beta() -> BenchFile:
             "parallel": lat(20, 6000, 7000, 7500),
             "queue": QueueStats(n=7, immediate_429=1, timeout_429=0, outcomes={}),
         },
-        memory=Memory(llm_peak=3 * GIB, llm_anon=GIB, llm_file=GIB, api_peak=None, api_anon=None),
+        memory=Memory(
+            llm_peak=3 * GIB,
+            llm_anon=GIB,
+            llm_file=GIB,
+            api_peak=None,
+            api_file=None,
+            api_anon=None,
+        ),
     )
 
 
@@ -162,18 +208,23 @@ Engine: podman, podman-compose version 1.5.0; 8 vCPU x86_64; llm threads 6, cont
 | alpha | Q4_K_M | 2.00 GiB | 0.50 | 12.0 | 22.0 | 4.0 | 6.1 | 7.0 | 19 | 1 | 12.3 | 150.0 | 560.0 |
 | beta | - | - | 2.50 loaded | - | - | 5.0 | 5.5 | 6.0 | 20 | 0 | 8.0 | 90.0 | 400.0 |
 
-| Model | Long input, s | Two clients p95, s | Two clients non-ok | Queue probe: immediate 429 | Queue probe: 429 after wait |
-|---|---|---|---|---|---|
-| alpha | 9.0 | 8.0 | 1 | 2 | 1 |
-| beta | - | 7.0 | 0 | 1 | 0 |
+| Model | Long input, s | Long input outcome | Two clients p95, s | Two clients non-ok | Queue probe: immediate 429 | Queue probe: 429 after wait | Queue probe: other non-ok |
+|---|---|---|---|---|---|---|---|
+| alpha | 9.0 | ok | 8.0 | 1 | 2 | 1 | 1 |
+| beta | - | client_timeout | 7.0 | 0 | 1 | 0 | 0 |
 
-| Model | p50 first 10, s | p95 first 10, s | p50 last 10, s | p95 last 10, s | Memory before | Memory after |
-|---|---|---|---|---|---|---|
-| alpha | 4.0 | 5.0 | 4.1 | 5.2 | 1.00 GiB | 1.50 GiB |
-| beta | - | - | - | - | - | - |
+| Model | p50 first 10, s | p95 first 10, s | p50 last 10, s | p95 last 10, s | Memory before | Memory after | n ok | Non-ok |
+|---|---|---|---|---|---|---|---|---|
+| alpha | 4.0 | 5.0 | 4.1 | 5.2 | 1.00 GiB | 1.50 GiB | 49 | 1 |
+| beta | - | - | - | - | - | - | - | - |
 
-| Model | llm peak | llm file | api peak | GGUF | RAM floor | RAM, conservative | RAM, worst | llm image | api image |
-|---|---|---|---|---|---|---|---|---|---|
-| alpha | 4.00 GiB | 0.50 GiB | 0.25 GiB | 2.00 GiB | 3.00 GiB | 5.00 GiB | 6.00 GiB | 3.00 GiB | 0.50 GiB |
-| beta | 3.00 GiB | 1.00 GiB | - | - | 2.00 GiB | - | - | - | 0.50 GiB |
+| Model | llm peak | llm file | api peak | api file | GGUF | RAM floor | RAM, conservative | RAM, worst | llm image | api image |
+|---|---|---|---|---|---|---|---|---|---|---|
+| alpha | 4.00 GiB | 0.50 GiB | 0.25 GiB | 0.12 GiB | 2.00 GiB | 3.00 GiB | 5.00 GiB | 6.00 GiB | 3.00 GiB | 0.50 GiB |
+| beta | 3.00 GiB | 1.00 GiB | - | - | - | 2.00 GiB | - | - | - | 0.50 GiB |
+
+| Model | llm need | api peak | Disk |
+|---|---|---|---|
+| alpha | 5.00 GiB | 0.25 GiB | 5.50 GiB |
+| beta | - | - | - |
 """

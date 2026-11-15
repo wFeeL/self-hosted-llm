@@ -10,6 +10,7 @@ from bench_fakes import API_ENV, COMPOSE, LLM_ENV, Stack, make_plan
 from error_classifier.benchmark.records import RequestRecord
 from error_classifier.benchmark.runner import (
     BenchUnavailable,
+    ColdStart,
     CommandResult,
     RunResult,
     bench_inputs,
@@ -170,6 +171,37 @@ async def test_cold_start_stops_when_up_fails(stack: Stack) -> None:
     assert stack.clock.now - 1000.0 < 600
 
 
+async def test_cold_start_stops_when_down_fails(stack: Stack) -> None:
+    stack.down_code = 1
+    stack.down_stderr = "no such pod"
+    result = await stack.run(make_plan(cold_start=True))
+
+    assert result.stop_reason == "cold_start_failed"
+    assert result.failure_detail == "no such pod"
+    assert result.cold_start == ColdStart(health_s=None, ready_s=None)
+    assert all("up" not in c.args for c in stack.calls)
+
+
+async def test_cold_start_stops_when_the_old_stack_still_answers(stack: Stack) -> None:
+    stack.alive_after_down = True
+    result = await stack.run(make_plan(cold_start=True))
+
+    assert result.stop_reason == "cold_start_failed"
+    assert "still answers" in result.failure_detail
+    assert result.cold_start == ColdStart(health_s=None, ready_s=None)
+    assert all("up" not in c.args for c in stack.calls)
+
+
+async def test_failed_up_reports_the_error_tail(stack: Stack) -> None:
+    stack.ready_after = 10**9
+    stack.up_code = 1
+    stack.up_stderr = "port is busy"
+    stack.clock.pause = 0.002
+    result = await stack.run(make_plan(cold_start=True))
+
+    assert result.failure_detail == "port is busy"
+
+
 async def test_cold_start_stops_without_offline(stack: Stack) -> None:
     stack.llm_env = {"LLAMA_ARG_OFFLINE": "0"}
     result = await stack.run(make_plan(cold_start=True))
@@ -297,12 +329,43 @@ async def test_negative_counter_stops_the_run(stack: Stack) -> None:
 
 
 async def test_time_limit_stops_before_the_next_phase(stack: Stack) -> None:
-    stack.latency_s = 1.0
-    result = await stack.run(make_plan(max_s=10))
+    stack.latency_s = 0.45
+    result = await stack.run(make_plan(max_s=10.3))
 
     assert result.stop_reason == "time_limit"
     assert not result.complete
     assert by_phase(result) == {"warmup": 3, "series": 20}
+
+
+async def test_time_limit_stops_inside_the_series(stack: Stack) -> None:
+    stack.latency_s = 1.0
+    result = await stack.run(make_plan(max_s=5))
+
+    assert result.stop_reason == "time_limit"
+    assert not result.complete
+    assert by_phase(result) == {"warmup": 3, "series": 2}
+    assert [(r.phase, r.edge) for r in result.readings] == [("series", "start"), ("series", "end")]
+
+
+async def test_time_limit_stops_inside_the_sequential_phase(stack: Stack) -> None:
+    result = await stack.run(make_plan(max_s=4.5))
+
+    assert result.stop_reason == "time_limit"
+    counts = by_phase(result)
+    assert counts["series"] == 20
+    assert 0 < counts["sequential"] < 50
+    assert "parallel" not in counts
+    assert ("sequential", "end") in {(r.phase, r.edge) for r in result.readings}
+
+
+async def test_time_limit_stops_both_clients_of_the_parallel_phase(stack: Stack) -> None:
+    result = await stack.run(make_plan(skip_sequential=True, max_s=2.7))
+
+    assert result.stop_reason == "time_limit"
+    counts = by_phase(result)
+    assert 0 < counts["parallel"] < 20
+    assert "queue" not in counts
+    assert ("parallel", "end") in {(r.phase, r.edge) for r in result.readings}
 
 
 async def test_time_limit_does_not_cut_the_warmup(stack: Stack) -> None:
@@ -389,5 +452,11 @@ def test_subprocess_runner() -> None:
     assert subprocess_runner(["echo", "hi"]) == CommandResult(0, "hi\n")
     assert subprocess_runner(["sh", "-c", "echo $BENCH_X"], env={"BENCH_X": "1"}).stdout == "1\n"
     assert subprocess_runner(["sh", "-c", "exit 3"]).code == 3
+    failed = subprocess_runner(
+        ["sh", "-c", "echo a >&2; head -c 600 /dev/zero | tr '\\0' x >&2; exit 1"]
+    )
+    assert failed.code == 1
+    assert len(failed.stderr_tail) == 500
+    assert failed.stderr_tail.endswith("x")
     assert subprocess_runner(["sleep", "5"], timeout_s=0.1) == CommandResult(-1, "")
     assert subprocess_runner(["/no/such/binary"]) == CommandResult(-1, "")
