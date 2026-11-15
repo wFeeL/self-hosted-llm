@@ -161,6 +161,43 @@ LLM_MEM_LIMIT=6g
 The smallest file (about 1 GB) and the fastest (p50 3.9 s), with the weakest category accuracy (46 of 60). It followed the injection. It was not benchmarked: its memory, long inputs and concurrency are unknown.
 
 
+## Configuration
+
+All settings live in `.env`, copied from `.env.example`; compose passes each service only its own variables. Changing a model or a limit needs no change of code, only `.env` and `docker compose up -d`.
+
+| variable | default | meaning |
+|---|---|---|
+| MODEL_ALIAS | `qwen3.5-2b-q4km` | Name of the model in llama-server and in API answers; see [Choosing a model](#choosing-a-model) |
+| LLAMA_ARG_HF_REPO | `bartowski/Qwen_Qwen3.5-2B-GGUF` | Hugging Face repository of the GGUF file |
+| LLAMA_ARG_HF_FILE | `Qwen_Qwen3.5-2B-Q4_K_M.gguf` | GGUF file in that repository, downloaded on the first start |
+| LLAMA_ARG_CTX_SIZE | 8192 | Context of llama-server, split between the slots; keep it at least `LLAMA_ARG_N_PARALLEL` × 4096 |
+| LLAMA_ARG_N_PARALLEL | 2 | Slots of llama-server, and the number of requests the API classifies at once |
+| LLAMA_ARG_THREADS | 6 | CPU threads of llama-server; keep it at `LLM_CPUS` or below |
+| LLAMA_ARG_BATCH | 512 | Prompt batch; a cancelled request frees its slot only after the current batch |
+| LLAMA_ARG_MMPROJ_AUTO | off | Keeps llama-server from downloading a vision projector the service does not use |
+| LLAMA_ARG_ENDPOINT_METRICS | 1 | Enables `/metrics` of llama-server, used by the benchmark |
+| LLAMA_ARG_OFFLINE | 0 | `1` loads the model only from the volume; set it after the first start and back to `0` to change the model |
+| LLM_CPUS | 6 | CPU limit of the `llm` container |
+| LLM_MEM_LIMIT | 6g | Memory limit of the `llm` container (swap is not added); see the benchmark tables before lowering it |
+| API_CPUS | 1 | CPU limit of the `api` container |
+| API_MEM_LIMIT | 512m | Memory limit of the `api` container |
+| LLM_START_PERIOD | 1800s | How long the `llm` healthcheck tolerates failures while the model downloads and loads; the service is healthy at the first successful check, so a long window costs nothing |
+| API_BIND | 127.0.0.1 | Address the API port is published on; keep it local and put a reverse proxy in front |
+| API_PORT | 8000 | Published API port |
+| LLM_PROBE_TIMEOUT_S | 2.0 | Timeout of the readiness probe from the API to llama-server |
+| LOG_LEVEL | INFO | Log level of the API; error texts are never logged in full |
+| MAX_CONCURRENCY | `LLAMA_ARG_N_PARALLEL` | Requests classified at the same time; compose sets it from `LLAMA_ARG_N_PARALLEL`, so it is not in `.env` |
+| MAX_QUEUE | 4 | Requests allowed to wait for a free slot, 0 to 1000; one more gets 429 `queue_full` at once |
+| QUEUE_TIMEOUT_S | 30 | Longest wait for a slot in seconds, above 0 up to 600; then 429 `queue_full`, and `Retry-After` is this value rounded up |
+| REQUEST_TIMEOUT_S | 120 | Seconds for the whole classification, both attempts, counted from getting a slot |
+| MAX_INPUT_CHARS | 3000 | Longest error text sent to the model, 200 to 4000; longer text is truncated |
+| MAX_REQUEST_BYTES | 262144 | Largest request body, not less than 12 times `MAX_INPUT_CHARS` plus 64 |
+| MAX_OUTPUT_TOKENS | 256 | Token limit of the model answer, 16 to 2048 |
+| LLM_TEMPERATURE | 0.0 | Sampling temperature, 0 to 2 |
+| LLM_DISABLE_THINKING | false | Sends `chat_template_kwargs` with `enable_thinking: false` for models that think |
+| API_KEY | empty | Access key: when set, `/classify` and `/v1/*` need `Authorization: Bearer <API_KEY>` and answer 401 `unauthorized` otherwise; letters, digits and `. _ ~ + / = -` only (use `openssl rand -hex 32`); `/health` and `/ready` stay open |
+| HF_TOKEN | not set | Only for gated models, passed to `llm` with a `compose.override.yaml` (see [Deploying on a clean VPS](#deploying-on-a-clean-vps)) |
+
 ## Architecture
 
 Two containers make up the stack: `api` (FastAPI) and `llm` (llama-server from llama.cpp).
@@ -243,18 +280,7 @@ Package `error_classifier`. `Status` shows what exists now.
 
 ### Settings
 
-| variable | default | meaning |
-|---|---|---|
-| MAX_CONCURRENCY | 2 | Requests classified at the same time, 1 to 64; keep it equal to `LLAMA_ARG_N_PARALLEL` |
-| MAX_QUEUE | 4 | Requests allowed to wait for a free slot, 0 to 1000; one more gets 429 `queue_full` at once |
-| QUEUE_TIMEOUT_S | 30 | Longest wait for a slot in seconds, above 0 up to 600; then 429 `queue_full`, and `Retry-After` is this value rounded up |
-| REQUEST_TIMEOUT_S | 120 | Seconds for the whole classification, both attempts, counted from getting a slot |
-| MAX_INPUT_CHARS | 3000 | Longest error text sent to the model, 200 to 4000; longer text is truncated |
-| MAX_REQUEST_BYTES | 262144 | Largest request body, not less than 12 times `MAX_INPUT_CHARS` plus 64 |
-| MAX_OUTPUT_TOKENS | 256 | Token limit of the model answer, 16 to 2048 |
-| LLM_TEMPERATURE | 0.0 | Sampling temperature, 0 to 2 |
-| API_KEY | empty | Access key: when set, `/classify` and `/v1/*` need `Authorization: Bearer <API_KEY>` and answer 401 `unauthorized` otherwise; letters, digits and `. _ ~ + / = -` only (use `openssl rand -hex 32`); `/health` and `/ready` stay open |
-| LLM_DISABLE_THINKING | false | Sends `chat_template_kwargs` with `enable_thinking: false` for models that think |
+The limits of classification (`MAX_INPUT_CHARS`, `MAX_OUTPUT_TOKENS`, `REQUEST_TIMEOUT_S` and others) are listed with every other variable in [Configuration](#configuration).
 
 ## Error codes
 

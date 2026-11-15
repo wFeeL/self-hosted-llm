@@ -1,5 +1,11 @@
 name: llm-error-classifier
 
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
 services:
   llm:
     image: ghcr.io/ggml-org/llama.cpp:server-b12352@sha256:998e17af1ae710081e5a6e6db962f29dd81db31b33eccf281f1767ff0f7729c7
@@ -24,13 +30,14 @@ services:
       interval: 10s
       timeout: 5s
       retries: 3
-      start_period: ${LLM_START_PERIOD:-600s}
+      start_period: ${LLM_START_PERIOD:-1800s}
     cpus: ${LLM_CPUS:-6}
     mem_limit: ${LLM_MEM_LIMIT:-6g}
     memswap_limit: ${LLM_MEM_LIMIT:-6g}
     security_opt: ["no-new-privileges:true"]
     cap_drop: [ALL]
     restart: unless-stopped
+    logging: *logging
 
   api:
     build: .
@@ -41,7 +48,7 @@ services:
       LLM_PROBE_TIMEOUT_S: ${LLM_PROBE_TIMEOUT_S:-2.0}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
       REQUEST_TIMEOUT_S: ${REQUEST_TIMEOUT_S:-120}
-      MAX_CONCURRENCY: ${MAX_CONCURRENCY:-2}
+      MAX_CONCURRENCY: ${LLAMA_ARG_N_PARALLEL:-2}
       MAX_QUEUE: ${MAX_QUEUE:-4}
       QUEUE_TIMEOUT_S: ${QUEUE_TIMEOUT_S:-30}
       MAX_INPUT_CHARS: ${MAX_INPUT_CHARS:-3000}
@@ -67,6 +74,7 @@ services:
     security_opt: ["no-new-privileges:true"]
     cap_drop: [ALL]
     restart: unless-stopped
+    logging: *logging
 
 volumes:
   models:
