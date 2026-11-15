@@ -31,7 +31,9 @@ from error_classifier.benchmark.report import (
     write_bench,
 )
 from error_classifier.benchmark.runner import (
+    SEQUENTIAL_ROWS,
     SLOW_COMMAND_TIMEOUT_S,
+    WARMUP_ROWS,
     BenchUnavailable,
     Plan,
     Runner,
@@ -60,8 +62,6 @@ API_ENV_KEYS: Final = (
     "LLM_DISABLE_THINKING",
 )
 HAWK_PREFIX: Final = "hawkstand_"
-WARMUP_ROWS: Final = 3
-SEQUENTIAL_ROWS: Final = 50
 
 
 def _err(text: str) -> None:

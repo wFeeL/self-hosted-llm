@@ -1,5 +1,6 @@
 import json
 import os
+from collections import Counter
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -146,6 +147,17 @@ def _same(files: Sequence[BenchFile], what: str, key: Callable[[BenchConfig], ob
         raise ValueError(f"the results come from different {what}")
 
 
+def _check_rows(f: BenchFile) -> None:
+    counted = Counter(r.phase for r in f.records)
+    planned = f.summary.config.phases
+    for phase in sorted(planned.keys() | counted.keys()):
+        if counted.get(phase, 0) != planned.get(phase, 0):
+            raise ValueError(
+                f"{f.summary.config.model}: phase {phase} has {counted.get(phase, 0)} "
+                f"records, the plan says {planned.get(phase, 0)}"
+            )
+
+
 def _check(files: Sequence[BenchFile]) -> None:
     if not files:
         raise ValueError("no results to report")
@@ -154,6 +166,13 @@ def _check(files: Sequence[BenchFile]) -> None:
             raise ValueError(f"{f.summary.config.model}: the run is incomplete")
     _same(files, "inputs", lambda c: c.inputs_sha256)
     _same(files, "engines", lambda c: c.engine)
+    # The API image differs on purpose: it is built from the package that holds this script.
+    _same(files, "llm image id", lambda c: c.llm_image_id)
+    _same(files, "cpu count", lambda c: c.cpu_count)
+    _same(files, "machine", lambda c: c.machine)
+    _same(files, "compose version", lambda c: c.compose_version)
+    for f in files:
+        _check_rows(f)
     for name, setting, own in (
         ("runtime", "runtime_env", MODEL_RUNTIME_KEYS),
         ("API", "api_env", MODEL_API_KEYS),

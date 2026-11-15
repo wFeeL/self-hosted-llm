@@ -7,6 +7,7 @@ from error_classifier.benchmark.aggregate import (
     QueueStats,
     SpeedStats,
 )
+from error_classifier.benchmark.records import RequestRecord
 from error_classifier.benchmark.report import BenchConfig, BenchFile, Memory, Summary
 from error_classifier.benchmark.runner import ColdStart
 
@@ -87,6 +88,26 @@ def aggregates(**changes: object) -> Aggregates:
     return base.model_copy(update=changes)
 
 
+def rows(phases: dict[str, int]) -> list[RequestRecord]:
+    return [
+        RequestRecord(
+            phase=phase,  # pyright: ignore[reportArgumentType]
+            index=i,
+            client=0,
+            item_id=f"id{i}",
+            started_s=float(i),
+            status=200,
+            outcome="ok",
+            wall_ms=1000,
+            prompt_tokens=None,
+            cached_tokens=None,
+            completion_tokens=None,
+        )
+        for phase, n in phases.items()
+        for i in range(n)
+    ]
+
+
 def bench_file(
     model: str,
     conf: dict[str, object] | None = None,
@@ -101,7 +122,7 @@ def bench_file(
         or Memory(llm_peak=3 * GIB, llm_anon=GIB, llm_file=GIB, api_peak=None, api_anon=None),
         aggregates=aggregates(**(agg or {})),
     )
-    return BenchFile(records=[], readings=[], summary=summary)
+    return BenchFile(records=rows(summary.config.phases), readings=[], summary=summary)
 
 
 def alpha() -> BenchFile:
