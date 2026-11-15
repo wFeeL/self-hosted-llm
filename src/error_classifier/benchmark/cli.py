@@ -83,7 +83,7 @@ def _parser() -> argparse.ArgumentParser:
     run.add_argument("--skip-sequential", action="store_true")
     run.add_argument("--max-minutes", type=float, default=15.0)
     run.add_argument("--dataset", type=Path, default=DEFAULT_DATASET)
-    run.add_argument("--out-dir", type=Path, default=Path("docs/benchmarks"))
+    run.add_argument("--out-dir", type=Path, default=Path("bench/results"))
     report = commands.add_parser("report", help="print tables for benchmark files")
     report.add_argument("paths", type=Path, nargs="+", metavar="PATH")
     return parser

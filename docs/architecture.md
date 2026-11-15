@@ -156,4 +156,4 @@ Package `error_classifier`. `Status` shows what exists now.
 | `eval/dataset.jsonl`, `eval/results/` | Labelled evaluation set and raw results of the runs | present |
 | `docs/architecture.md` | Decisions (this file) | present |
 | `docs/evaluation.md` | Evaluation results generated from `eval/results/` | present |
-| `docs/benchmarks.md` | Benchmark results with raw files | planned |
+| `bench/results/` | Raw benchmark runs; the tables are in the Benchmarks section of README | present |
