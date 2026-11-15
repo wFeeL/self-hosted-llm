@@ -102,6 +102,7 @@ async def test_readings_hold_counters_and_cgroups(stack: Stack) -> None:
     assert (llm.cpu_usage_usec, llm.memory_current, llm.memory_anon) == (1_000_000, 5000, 3000)
     assert (api.cpu_usage_usec, api.memory_current, api.memory_swap_current) == (1_000_000, 500, 4)
     assert llm.memory_swap_current == 40
+    assert api.memory_anon == 300
     end_llm = next(c for c in end.cgroups if c.container == "llm")
     assert end_llm.cpu_usage_usec == 2_000_000
 

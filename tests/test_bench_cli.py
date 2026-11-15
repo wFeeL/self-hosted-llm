@@ -131,7 +131,7 @@ def test_run_writes_a_complete_file(
     assert bench.summary.cold_start is None
     memory = bench.summary.memory
     assert (memory.llm_peak, memory.llm_anon, memory.llm_file) == (9000, 3000, 700)
-    assert (memory.api_peak, memory.api_anon, memory.api_file) == (900, 3000, 700)
+    assert (memory.api_peak, memory.api_anon, memory.api_file) == (900, 300, 70)
     assert (memory.llm_swap_peak, memory.llm_swap_max, memory.llm_memory_max) == (
         70,
         "0",

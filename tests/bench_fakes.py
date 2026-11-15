@@ -223,7 +223,8 @@ class Stack:
             self.cpu[container] += 1_000_000
             return CommandResult(0, f"usage_usec {self.cpu[container]}\nuser_usec 5\n")
         if name == "memory.stat":
-            return CommandResult(0, "anon 3000\nfile 700\n")
+            stat = {"llm_c": "anon 3000\nfile 700\n", "api_c": "anon 300\nfile 70\n"}
+            return CommandResult(0, stat[container])
         # Different per container and file, so a swapped container or file name fails a test.
         values = {
             "memory.current": {"llm_c": "5000\n", "api_c": "500\n"},
