@@ -5,8 +5,8 @@ A service that classifies error messages by category and severity with a small l
 ## Results at a glance
 
 - Default model: Qwen3.5-2B (Q4_K_M, 1.4 GB file) on llama.cpp `llama-server`, CPU only.
-- Quality on the 60 labelled errors: category right in 52, category and severity both right in 24, no leaked secrets, the injection in the set treated as text. Qwen3-4B is more accurate (34 rows with both fields) but repeated an email address from an error text and is about 2.4 times slower.
-- Speed through the API on 8 vCPU (6 threads): p50 5.8 s and p95 10.8 s for one request, 24.6 s for a 3000-character input, 50 requests in a row without growth of memory beyond 0.1 GiB.
+- Quality on the 60 labelled errors: category right in 52 (46 when it must match strictly), category and severity both right in 24, no leaked secrets, and both injections in the set treated as text. Qwen3-4B got both fields right in 34 rows, a lead that 60 rows cannot confirm (McNemar p 0.052), but it repeated an email address from an error text and was 2.4 times slower in the evaluation (p50 10.2 against 4.2 s) and 1.4 times slower through the API.
+- Speed through the API on 8 vCPU (6 threads): p50 5.8 s and p95 10.8 s over 20 requests (the 95th percentile of 20 is the 19th value; 18 of them took at most 6.9 s), 24.6 s for a 3000-character input. Over 50 requests in a row the anonymous memory of `llm` went from 0.85 to 0.94 GiB and single requests took up to 21.6 s on the shared host.
 - Resources: 2.34 GiB of RAM for `llm` and 0.10 GiB for `api`, 2.3 GiB of disk for the images and the model, 5.2 to 5.5 CPU cores while answering.
 - APIs: `POST /classify` and an OpenAI-compatible `/v1/chat/completions`, with a queue, timeouts, an optional API key and honest errors instead of made-up answers.
 
@@ -173,7 +173,7 @@ The smallest file (about 1 GB) and the fastest (p50 3.9 s), with the weakest cat
 
 ## Model and license
 
-Qwen3.5-2B is the default because it was the only evaluated model that neither repeated a secret from the error text nor followed the injection, it is the fastest of the 2 to 4B models, and it fits a 4 GiB server. The price is accuracy: Qwen3-4B gets both fields right in 10 more of 60 rows.
+Qwen3.5-2B is the default because it was the only evaluated model that neither repeated a secret from the error text nor followed the injection, it has the lowest median latency of the 2 to 4B models, and by its measured memory it should fit a 4 GiB server (not tried). The price is accuracy: Qwen3-4B gets both fields right in 10 more of 60 rows.
 
 | Model | License | Where it is stated |
 |---|---|---|
@@ -182,7 +182,7 @@ Qwen3.5-2B is the default because it was the only evaluated model that neither r
 | Granite 4.1 3B, Granite 4.0 1B | Apache-2.0 | model card and repository metadata of [ibm-granite/granite-4.1-3b](https://huggingface.co/ibm-granite/granite-4.1-3b) and [ibm-granite/granite-4.0-1b](https://huggingface.co/ibm-granite/granite-4.0-1b) and their official GGUF repositories; the repositories have no `LICENSE` file |
 | llama.cpp (runtime image) | MIT | [ggml-org/llama.cpp](https://github.com/ggml-org/llama.cpp) |
 
-All weights are open and none of the repositories is gated (checked 2026-11-15). Apache-2.0 allows commercial use, changes and redistribution; whoever redistributes the weights has to keep the license and its notices. This service does not ship the weights: `llm` downloads them from Hugging Face on the first start.
+All weights are open and none of the repositories is gated (checked 2026-11-15). Apache-2.0 allows commercial use, changes and redistribution; whoever redistributes the weights has to include a copy of the license, keep the copyright and attribution notices and mark the files they changed (section 4 of the license), and the license grants no trademark rights. This service does not ship the weights: `llm` downloads them from Hugging Face on the first start.
 
 ## Configuration
 
@@ -269,11 +269,11 @@ Size `.env` before the first start. The defaults fit the machine the measurement
 | Server | `LLM_CPUS` | `LLAMA_ARG_THREADS` | `API_CPUS` | `LLAMA_ARG_N_PARALLEL` | `LLAMA_ARG_CTX_SIZE` | `LLM_MEM_LIMIT` | `REQUEST_TIMEOUT_S` |
 |---|---|---|---|---|---|---|---|
 | 8 vCPU, 8 GB or more (as measured) | 6 | 6 | 1 | 2 | 8192 | 6g | 120 |
-| 4 vCPU, 4 GB | 3 | 3 | 0.5 | 1 | 4096 | 2500m | 180 |
+| 4 vCPU, 4 GB (not measured) | 3 | 3 | 0.5 | 1 | 4096 | 2500m | 180 |
 | 2 vCPU, 4 GB (not measured) | 1.5 | 1 | 0.5 | 1 | 4096 | 2500m | 300 |
 
 - Keep `LLAMA_ARG_CTX_SIZE` at least `LLAMA_ARG_N_PARALLEL` × 4096: the context is split between slots, and a 3000-character input needs about 4096 tokens of a slot.
-- Keep `LLM_MEM_LIMIT` below the RAM of the server minus about 1.5 GB for the system, and above the `llm need` of your model in the benchmark tables (2.34 GiB for the default). A limit above the RAM protects nothing.
+- Keep `LLM_MEM_LIMIT` below the RAM of the server minus about 1 GB for the system, Docker and `api` (the VPS table above reserves 0.75 GiB plus the measured peak of `api`), and above the `llm need` of your model in the benchmark tables (2.34 GiB for the default). A limit above the RAM protects nothing.
 - The timeouts for 4 and 2 vCPU are estimates from the 8 vCPU measurements; speed on smaller servers was not measured.
 
 ### 4. First start
@@ -380,13 +380,13 @@ Of the model:
 - Severity is the weak field: the default model gets it exactly right in 27 of 60 rows and within one level in 56. The texts rarely say how many users are affected.
 - The category is right in 52 of 60 rows, and only 46 when the label must match strictly; `resource_error` and `permission_error` are the most confused.
 - `summary` and `suggested_action` are always English.
-- Leaks and injection were checked on 7 rows only; zero leaks there does not prove that the model never repeats a secret.
+- Leaks were checked on the 7 rows that contain a secret, and injection on 2 of them; zero leaks there does not prove that the model never repeats a secret.
 - The evaluation set has 60 rows written and labelled by one person, so differences of a few rows between models are noise.
 
 Of the configuration:
 
-- The context of 8192 tokens is split into 2 slots, so one request has about 4096 tokens: longer error texts are cut to `MAX_INPUT_CHARS` (3000) from the beginning and the end, and the answer says `truncated: true`.
-- Two requests are classified at a time; more wait in a queue of 4 for at most 30 s and then get 429. On 8 vCPU one request takes 5 to 11 s, a long one about 25 s.
+- The context of 8192 tokens is split into 2 slots, so one request has about 4096 tokens. A text longer than `MAX_INPUT_CHARS` (3000 characters) keeps its first and last parts and loses the middle, which is replaced by a marker inside the limit, and the answer says `truncated: true`; a text that still does not fit the slot gets 400 `invalid_input`. The 3000-character input of the benchmark used 3256 of the 4096 tokens; texts that tokenize more densely, or a higher `MAX_INPUT_CHARS`, can hit the 400.
+- Two requests are classified at a time; more wait in a queue of 4 for at most 30 s and then get 429. On 8 vCPU one request took 4 to 11 s in the 20-request series and up to 22 s now and then on the shared host; a long one about 25 s.
 - No streaming answers, no per-client rate limit, one model per stack; changing the model restarts `llm`.
 - The only access control is the optional `API_KEY`; TLS comes from the reverse proxy.
 
@@ -418,7 +418,7 @@ client --> api :8000 --> llm :8080
 - `llm` runs as root inside the container because the llama.cpp image sets no `USER`. This is accepted; the container runs with `no-new-privileges` and all capabilities dropped.
 - Base image digests are bumped by hand: pull the new image, read its digest with `docker image inspect --format '{{index .RepoDigests 0}}' <image>`, then edit the `Dockerfile` or `compose.yaml`.
 - Behind a reverse proxy a client disconnect reaches the app only if the proxy closes its connection to the app when the client leaves (for nginx, `proxy_ignore_client_abort` must stay off); otherwise the work runs to the end (assumed, not checked yet).
-- With `LLAMA_ARG_OFFLINE=0` and no network, a restart still loads the model from the `models` volume (checked).
+- With `LLAMA_ARG_OFFLINE=0` and no network, a restart still loads the model from the `models` volume (checked during development; the output is not kept).
 
 ### Modules
 
@@ -690,7 +690,7 @@ For the default model (Qwen3.5-2B, Q4_K_M):
 
 | Resource | Requirement | Source |
 |---|---|---|
-| CPU | x86_64 with AVX2; measured with 6 threads on 8 vCPU, smaller machines were not measured | `CPU llm, %` above |
+| CPU | measured on x86_64 with AVX2, 6 threads on 8 vCPU; smaller machines were not measured | `CPU llm, %` above |
 | RAM | 2.34 GiB for `llm` and 0.10 GiB for `api` (`llm need` and `api peak`) | last table |
 | Disk | 1.0 GiB for the two images and 1.3 GiB for the model file; every other model adds its GGUF to the `models` volume | memory table |
 
@@ -706,7 +706,7 @@ Qwen3-4B needs 5.77 GiB for `llm` and Granite 4.1 3B 4.29 GiB by the same measur
 
 ## About this test task
 
-This repository is a solution of the CodeX test task "Self-hosted LLM": deploy an open-weights model on a CPU and turn it into an API that classifies error messages. All requirements of the task are covered above: model choice and license, CPU-only deployment with an API, resource requirements, the classification JSON with defined categories and severity levels, handling of invalid model output, a test set with checked results, Docker Compose with persistent model storage, settings in `.env`, start after reboot, a VPS guide, and measurements in this README.
+This repository is a solution of the CodeX test task "Self-hosted LLM": deploy an open-weights model on a CPU and turn it into an API that classifies error messages. All requirements of the task are addressed above: model choice and license, CPU-only deployment with an API, resource requirements, the classification JSON with defined categories and severity levels, handling of invalid model output, a test set with checked results, Docker Compose with persistent model storage, settings in `.env`, start after reboot, a VPS guide, and measurements in this README. Running on Docker, the start after a reboot and the VPS guide are written but not yet run (see TODO).
 
 Of the optional items, the OpenAI-compatible API, the comparison of several models, the automatic evaluation, the limit on concurrent requests, timeouts and model errors, and model changes without code changes are done. Prometheus metrics with Grafana and a demonstration on a clean VPS were left out on purpose; llama-server exposes `/metrics` if they are needed.
 
