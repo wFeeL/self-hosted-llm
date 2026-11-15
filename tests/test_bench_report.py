@@ -1,11 +1,12 @@
 from pathlib import Path
 
 import pytest
-from bench_files import EXPECTED, alpha, bench_file, beta, config, rows
+from bench_files import EXPECTED, GIB, alpha, bench_file, beta, config, rows
 
 from error_classifier.benchmark.records import CgroupReading, Reading, RequestRecord
 from error_classifier.benchmark.report import (
     BenchFile,
+    Memory,
     Summary,
     read_bench,
     render_bench_report,
@@ -169,3 +170,76 @@ def test_summary_without_api_file_still_reads() -> None:
     data = alpha().summary.model_dump(mode="json")
     del data["memory"]["api_file"]
     assert Summary.model_validate(data).memory.api_file is None
+
+
+def test_old_summary_without_swap_fields_reads() -> None:
+    data = alpha().summary.model_dump(mode="json")
+    for key in (
+        "llm_swap_peak",
+        "api_swap_peak",
+        "llm_swap_max",
+        "api_swap_max",
+        "llm_memory_max",
+        "api_memory_max",
+    ):
+        del data["memory"][key]
+    memory = Summary.model_validate(data).memory
+    assert memory.llm_swap_peak is None
+    assert memory.api_swap_max is None
+    assert memory.llm_memory_max is None
+
+
+def _memory_table(text: str) -> tuple[list[str], list[str]]:
+    lines = text.splitlines()
+    start = next(i for i, line in enumerate(lines) if line.startswith("| Model | llm peak |"))
+
+    def cells(line: str) -> list[str]:
+        return [c.strip() for c in line.strip("|").split("|")]
+
+    return cells(lines[start]), cells(lines[start + 2])
+
+
+def test_report_shows_swap_and_limits_after_api_file() -> None:
+    memory = Memory(
+        llm_peak=GIB,
+        llm_anon=GIB,
+        llm_file=GIB,
+        api_peak=GIB,
+        api_anon=None,
+        api_file=GIB,
+        llm_swap_peak=2**29,
+        llm_swap_max="0",
+        llm_memory_max="6442450944",
+        api_swap_peak=2**28,
+        api_swap_max="max",
+        api_memory_max="536870912",
+    )
+    header, row = _memory_table(render_bench_report([bench_file("alpha", memory=memory)]))
+    columns = dict(zip(header, row, strict=True))
+    start = header.index("api file")
+    assert header[start + 1 : start + 7] == [
+        "llm swap peak",
+        "llm swap max",
+        "llm memory max",
+        "api swap peak",
+        "api swap max",
+        "api memory max",
+    ]
+    assert columns["llm swap peak"] == "0.50 GiB"
+    assert columns["api swap peak"] == "0.25 GiB"
+    assert (columns["llm swap max"], columns["llm memory max"]) == ("0", "6442450944")
+    assert (columns["api swap max"], columns["api memory max"]) == ("max", "536870912")
+
+
+def test_report_shows_dashes_for_files_without_swap_fields() -> None:
+    header, row = _memory_table(render_bench_report([bench_file("alpha")]))
+    columns = dict(zip(header, row, strict=True))
+    for name in (
+        "llm swap peak",
+        "llm swap max",
+        "llm memory max",
+        "api swap peak",
+        "api swap max",
+        "api memory max",
+    ):
+        assert columns[name] == "-", name

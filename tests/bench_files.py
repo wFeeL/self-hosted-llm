@@ -218,10 +218,10 @@ Engine: podman, podman-compose version 1.5.0; 8 vCPU x86_64; llm threads 6, cont
 | alpha | 4.0 | 5.0 | 4.1 | 5.2 | 1.00 GiB | 1.50 GiB | 49 | 1 |
 | beta | - | - | - | - | - | - | - | - |
 
-| Model | llm peak | llm file | api peak | api file | GGUF | RAM floor | RAM, conservative | RAM, worst | llm image | api image |
-|---|---|---|---|---|---|---|---|---|---|---|
-| alpha | 4.00 GiB | 0.50 GiB | 0.25 GiB | 0.12 GiB | 2.00 GiB | 3.00 GiB | 5.00 GiB | 6.00 GiB | 3.00 GiB | 0.50 GiB |
-| beta | 3.00 GiB | 1.00 GiB | - | - | - | 2.00 GiB | - | - | - | 0.50 GiB |
+| Model | llm peak | llm file | api peak | api file | llm swap peak | llm swap max | llm memory max | api swap peak | api swap max | api memory max | GGUF | RAM floor | RAM, conservative | RAM, worst | llm image | api image |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| alpha | 4.00 GiB | 0.50 GiB | 0.25 GiB | 0.12 GiB | - | - | - | - | - | - | 2.00 GiB | 3.00 GiB | 5.00 GiB | 6.00 GiB | 3.00 GiB | 0.50 GiB |
+| beta | 3.00 GiB | 1.00 GiB | - | - | - | - | - | - | - | - | - | 2.00 GiB | - | - | - | 0.50 GiB |
 
 | Model | llm need | api peak | Disk |
 |---|---|---|---|

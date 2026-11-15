@@ -64,6 +64,13 @@ class Memory(_Model):
     api_peak: int | None
     api_anon: int | None
     api_file: int | None = None  # absent in the first three result files
+    # The fields below are absent in files written before swap and limits were read.
+    llm_swap_peak: int | None = None
+    api_swap_peak: int | None = None
+    llm_swap_max: str | None = None
+    api_swap_max: str | None = None
+    llm_memory_max: str | None = None
+    api_memory_max: str | None = None
 
 
 class Summary(_Model):
@@ -133,6 +140,10 @@ def _seconds(ms: int | None) -> str:
 
 def _float(value: float | None) -> str:
     return "-" if value is None else f"{value:.1f}"
+
+
+def _dash(value: str | None) -> str:
+    return "-" if value is None else value
 
 
 def _gib(size: int | None) -> str:
@@ -284,6 +295,12 @@ def render_bench_report(files: Sequence[BenchFile]) -> str:
                 _gib(m.llm_file),
                 _gib(m.api_peak),
                 _gib(m.api_file),
+                _gib(m.llm_swap_peak),
+                _dash(m.llm_swap_max),
+                _dash(m.llm_memory_max),
+                _gib(m.api_swap_peak),
+                _dash(m.api_swap_max),
+                _dash(m.api_memory_max),
                 _gib(c.model_file_size),
                 _gib(a.llm_anon_max),
                 _gib(_total(a.llm_anon_max, c.model_file_size)),
@@ -356,6 +373,12 @@ def render_bench_report(files: Sequence[BenchFile]) -> str:
                 "llm file",
                 "api peak",
                 "api file",
+                "llm swap peak",
+                "llm swap max",
+                "llm memory max",
+                "api swap peak",
+                "api swap max",
+                "api memory max",
                 "GGUF",
                 "RAM floor",
                 "RAM, conservative",

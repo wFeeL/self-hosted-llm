@@ -34,6 +34,7 @@ class CgroupReading(_Model):
     cpu_usage_usec: int | None
     memory_current: int | None
     memory_anon: int | None  # "anon" of memory.stat
+    memory_swap_current: int | None = None  # absent in files written before swap was read
 
 
 class Reading(_Model):

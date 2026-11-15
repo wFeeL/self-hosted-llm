@@ -100,7 +100,8 @@ async def test_readings_hold_counters_and_cgroups(stack: Stack) -> None:
     llm = next(c for c in start.cgroups if c.container == "llm")
     api = next(c for c in start.cgroups if c.container == "api")
     assert (llm.cpu_usage_usec, llm.memory_current, llm.memory_anon) == (1_000_000, 5000, 3000)
-    assert api.cpu_usage_usec == 1_000_000
+    assert (api.cpu_usage_usec, api.memory_current, api.memory_swap_current) == (1_000_000, 500, 4)
+    assert llm.memory_swap_current == 40
     end_llm = next(c for c in end.cgroups if c.container == "llm")
     assert end_llm.cpu_usage_usec == 2_000_000
 
@@ -389,6 +390,7 @@ async def test_unreadable_cgroups_leave_empty_fields(stack: Stack) -> None:
     assert result.complete
     cgroup = result.readings[0].cgroups[0]
     assert (cgroup.cpu_usage_usec, cgroup.memory_current, cgroup.memory_anon) == (None, None, None)
+    assert cgroup.memory_swap_current is None
 
 
 def test_bench_inputs_take_every_third_item() -> None:

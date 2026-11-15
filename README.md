@@ -665,11 +665,11 @@ Engine: podman, podman version 5.7.0; 8 vCPU x86_64; llm threads 6, context 8192
 | qwen3-4b-instruct-2507-q4km | - | - | - | - | - | - | - | - |
 | qwen3.5-2b-q4km | 6.1 | 7.6 | 6.8 | 12.5 | 0.85 GiB | 0.94 GiB | 50 | 0 |
 
-| Model | llm peak | llm file | api peak | api file | GGUF | RAM floor | RAM, conservative | RAM, worst | llm image | api image |
-|---|---|---|---|---|---|---|---|---|---|---|
-| granite-4.1-3b-q4km | 2.45 GiB | 0.03 GiB | 0.06 GiB | - | 1.96 GiB | 2.34 GiB | 4.29 GiB | 4.40 GiB | 0.78 GiB | 0.19 GiB |
-| qwen3-4b-instruct-2507-q4km | 5.77 GiB | 2.28 GiB | 0.09 GiB | - | 2.33 GiB | 3.06 GiB | 5.39 GiB | 8.09 GiB | 0.78 GiB | 0.19 GiB |
-| qwen3.5-2b-q4km | 2.34 GiB | 1.32 GiB | 0.10 GiB | - | 1.30 GiB | 1.01 GiB | 2.31 GiB | 3.64 GiB | 0.78 GiB | 0.19 GiB |
+| Model | llm peak | llm file | api peak | api file | llm swap peak | llm swap max | llm memory max | api swap peak | api swap max | api memory max | GGUF | RAM floor | RAM, conservative | RAM, worst | llm image | api image |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| granite-4.1-3b-q4km | 2.45 GiB | 0.03 GiB | 0.06 GiB | - | - | - | - | - | - | - | 1.96 GiB | 2.34 GiB | 4.29 GiB | 4.40 GiB | 0.78 GiB | 0.19 GiB |
+| qwen3-4b-instruct-2507-q4km | 5.77 GiB | 2.28 GiB | 0.09 GiB | - | - | - | - | - | - | - | 2.33 GiB | 3.06 GiB | 5.39 GiB | 8.09 GiB | 0.78 GiB | 0.19 GiB |
+| qwen3.5-2b-q4km | 2.34 GiB | 1.32 GiB | 0.10 GiB | - | - | - | - | - | - | - | 1.30 GiB | 1.01 GiB | 2.31 GiB | 3.64 GiB | 0.78 GiB | 0.19 GiB |
 
 | Model | llm need | api peak | Disk |
 |---|---|---|---|
