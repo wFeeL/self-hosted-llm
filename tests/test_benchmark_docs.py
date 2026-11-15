@@ -52,6 +52,13 @@ def test_only_the_default_model_runs_the_sequential_series() -> None:
             assert config.skip_sequential is True, model
 
 
+def test_every_run_probed_the_queue_and_kept_the_series_clean() -> None:
+    for path, bench in zip(FILES, _benches(), strict=True):
+        aggregates = bench.summary.aggregates
+        assert aggregates.queue.immediate_429 >= 1, path.name
+        assert set(aggregates.series.outcomes) == {"ok"}, path.name
+
+
 def test_tables_in_the_doc_match_the_report() -> None:
     text = DOC.read_text(encoding="utf-8")
     start, end = text.index(MARKER_START), text.index(MARKER_END)

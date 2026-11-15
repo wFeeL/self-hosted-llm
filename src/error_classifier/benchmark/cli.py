@@ -294,6 +294,7 @@ def _run(
             llm_file=llm_stat.get("file"),
             api_peak=api_peak,
             api_anon=api_stat.get("anon"),
+            api_file=api_stat.get("file"),
         ),
         aggregates=aggregate(result.records, result.readings),
     )

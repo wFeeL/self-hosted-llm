@@ -131,7 +131,7 @@ def test_run_writes_a_complete_file(
     assert bench.summary.cold_start is None
     memory = bench.summary.memory
     assert (memory.llm_peak, memory.llm_anon, memory.llm_file) == (9000, 3000, 700)
-    assert (memory.api_peak, memory.api_anon) == (9000, 3000)
+    assert (memory.api_peak, memory.api_anon, memory.api_file) == (9000, 3000, 700)
     assert bench.summary.aggregates == aggregate(bench.records, bench.readings)
     assert bench.summary.aggregates.series.n_ok == 20
     assert len(bench.records) == 101

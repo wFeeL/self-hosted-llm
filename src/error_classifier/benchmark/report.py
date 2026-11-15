@@ -63,6 +63,7 @@ class Memory(_Model):
     llm_file: int | None
     api_peak: int | None
     api_anon: int | None
+    api_file: int | None = None  # absent in the first three result files
 
 
 class Summary(_Model):
@@ -211,6 +212,7 @@ def render_bench_report(files: Sequence[BenchFile]) -> str:
     load_rows: list[list[str]] = []
     drift_rows: list[list[str]] = []
     memory_rows: list[list[str]] = []
+    need_rows: list[list[str]] = []
     for f in ordered:
         s = f.summary
         c, a, m = s.config, s.aggregates, s.memory
@@ -240,16 +242,22 @@ def render_bench_report(files: Sequence[BenchFile]) -> str:
             [
                 c.model,
                 _seconds(a.long_input.p50_ms),
+                ", ".join(sorted(a.long_input.outcomes)) or "-",
                 _seconds(a.parallel.p95_ms),
                 str(parallel_non_ok),
                 str(a.queue.immediate_429),
                 str(a.queue.timeout_429),
+                str(sum(n for o, n in a.queue.outcomes.items() if o not in ("ok", "queue_full"))),
             ]
         )
         d = a.sequential
+        every = a.sequential_all
+        sequential_non_ok = (
+            "-" if every is None else str(sum(n for o, n in every.outcomes.items() if o != "ok"))
+        )
         drift_rows.append(
-            [c.model, "-", "-", "-", "-", "-", "-"]
-            if d is None
+            [c.model, "-", "-", "-", "-", "-", "-", "-", "-"]
+            if d is None or every is None
             else [
                 c.model,
                 _seconds(d.first10.p50_ms),
@@ -258,6 +266,8 @@ def render_bench_report(files: Sequence[BenchFile]) -> str:
                 _seconds(d.last10.p95_ms),
                 _gib(d.memory_before),
                 _gib(d.memory_after),
+                str(every.n_ok),
+                sequential_non_ok,
             ]
         )
         memory_rows.append(
@@ -266,12 +276,23 @@ def render_bench_report(files: Sequence[BenchFile]) -> str:
                 _gib(m.llm_peak),
                 _gib(m.llm_file),
                 _gib(m.api_peak),
+                _gib(m.api_file),
                 _gib(c.model_file_size),
                 _gib(a.llm_anon_max),
                 _gib(_total(a.llm_anon_max, c.model_file_size)),
                 _gib(_total(m.llm_peak, c.model_file_size)),
                 _gib(c.llm_image_size),
                 _gib(c.api_image_size),
+            ]
+        )
+        conservative = _total(a.llm_anon_max, c.model_file_size)
+        need = None if conservative is None or m.llm_peak is None else max(conservative, m.llm_peak)
+        need_rows.append(
+            [
+                c.model,
+                _gib(need),
+                _gib(m.api_peak),
+                _gib(_total(c.llm_image_size, c.api_image_size, c.model_file_size)),
             ]
         )
     parts = [
@@ -299,10 +320,12 @@ def render_bench_report(files: Sequence[BenchFile]) -> str:
             [
                 "Model",
                 "Long input, s",
+                "Long input outcome",
                 "Two clients p95, s",
                 "Two clients non-ok",
                 "Queue probe: immediate 429",
                 "Queue probe: 429 after wait",
+                "Queue probe: other non-ok",
             ],
             load_rows,
         ),
@@ -315,6 +338,8 @@ def render_bench_report(files: Sequence[BenchFile]) -> str:
                 "p95 last 10, s",
                 "Memory before",
                 "Memory after",
+                "n ok",
+                "Non-ok",
             ],
             drift_rows,
         ),
@@ -324,6 +349,7 @@ def render_bench_report(files: Sequence[BenchFile]) -> str:
                 "llm peak",
                 "llm file",
                 "api peak",
+                "api file",
                 "GGUF",
                 "RAM floor",
                 "RAM, conservative",
@@ -333,5 +359,6 @@ def render_bench_report(files: Sequence[BenchFile]) -> str:
             ],
             memory_rows,
         ),
+        _table(["Model", "llm need", "api peak", "Disk"], need_rows),
     ]
     return "\n\n".join(parts) + "\n"

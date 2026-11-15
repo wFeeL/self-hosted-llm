@@ -6,6 +6,7 @@ from bench_files import EXPECTED, alpha, bench_file, beta, config, rows
 from error_classifier.benchmark.records import CgroupReading, Reading, RequestRecord
 from error_classifier.benchmark.report import (
     BenchFile,
+    Summary,
     read_bench,
     render_bench_report,
     write_bench,
@@ -162,3 +163,9 @@ def test_partial_file_is_readable_but_not_reportable(tmp_path: Path) -> None:
     assert loaded.summary.config.stop_reason == "time_limit"
     with pytest.raises(ValueError, match="incomplete"):
         render_bench_report([loaded])
+
+
+def test_summary_without_api_file_still_reads() -> None:
+    data = alpha().summary.model_dump(mode="json")
+    del data["memory"]["api_file"]
+    assert Summary.model_validate(data).memory.api_file is None
