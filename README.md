@@ -6,8 +6,8 @@ A service that classifies error messages by category and severity with a small l
 
 - Default model: Qwen3-4B-Instruct-2507 (Q4_K_M, 2.5 GB file) on llama.cpp `llama-server`, CPU only. Servers with 4 GiB of RAM or 2 vCPU should take Qwen3.5-2B (1.4 GB).
 - Quality on the 60 labelled errors: category right in 56 (52 when it must match strictly), severity right in 38, both right in 34, against 24 for Qwen3.5-2B, the earlier default. Both injections in the set were treated as text. The service masks email addresses in its answers; the model itself repeated one address from an error text, and that email was the only reason it lost the first choice. The rule was changed after the runs, see [The choice](#the-choice).
-- Speed through the API on 8 vCPU (6 threads): p50 8.1 s and p95 9.3 s over 20 requests, 70.9 s for one 3000-character input. The 50-request series was run only for Qwen3.5-2B (p50 5.8 s, p95 10.8 s, 24.6 s for the long input).
-- Resources: at least 5.77 GiB of RAM for `llm` (measured under a 6 GiB limit, so the real need may be higher; the default limit is now 6.5 GiB) and 0.09 GiB for `api`, 3.3 GiB of disk for the images and the model, about 5.8 CPU cores while answering.
+- Speed through the API on 8 vCPU (6 threads): p50 8.1 s and p95 9.3 s over 20 requests, 70.9 s for one 3000-character input. Qwen3.5-2B took p50 5.8 s and 24.6 s; only it also ran the series of 50 requests in a row (p50 6.6 s, up to 21.6 s on the shared host).
+- Resources: 5.77 GiB of RAM for `llm` at the peak (96% of the 6 GiB limit it ran under, so with more room it may take more; the default limit is now 6.5 GiB) and 0.09 GiB for `api`, 3.3 GiB of disk for the images and the model, about 5.8 CPU cores while answering.
 - APIs: `POST /classify` and an OpenAI-compatible `/v1/chat/completions`, with a queue, timeouts, an optional API key and honest errors instead of made-up answers.
 
 The numbers come from podman on a shared machine; see [Benchmarks](#benchmarks) and [Evaluation](#evaluation) for the method and [Limitations](#limitations) for what they do not cover.
@@ -21,7 +21,7 @@ until curl -fsS http://127.0.0.1:8000/ready; do sleep 5; done
 ```
 
 - The first start downloads about 2.5 GB of model weights into the `models` volume; watch it with `docker compose logs -f llm`.
-- `.env.example` limits `llm` to 6 CPUs, and Docker refuses to start a container with a limit above the number of cores. On a machine with fewer than 7 cores (`nproc`), take the values from the [sizing table](#3-get-the-code-and-the-configuration) first.
+- `.env.example` limits `llm` to 6 CPUs, and Docker refuses to start a container with a limit above the number of cores. On a machine with fewer than 6 cores (`nproc`), or with exactly 6 if the host should keep a core for itself and `api`, take the values from the [sizing table](#3-get-the-code-and-the-configuration) first.
 - If the loop keeps waiting, check `docker compose ps` and `docker compose logs llm`; an unhealthy `llm` keeps `api` from starting.
 - Every `docker compose` command needs `.env` to be present.
 - If the network is slow and `llm` becomes unhealthy before the download ends, run `docker compose up -d` again after the download, or raise `LLM_START_PERIOD` in `.env` (1800 s by default).
@@ -116,7 +116,7 @@ Not measured: granite-4.0-1b-q4km.
 
 - 2 GiB: no model fits with the default context of 8192 tokens. Even the 0.95 GiB file of Granite 4.0 1B plus the smallest measured runtime memory (1.01 GiB for Qwen3.5-2B) is above the budget, and Granite 4.0 1B also followed the injection in the evaluation.
 - 4 GiB: Qwen3.5-2B is the only measured model that fits. Use its block with the 4 GB row of the [sizing table](#3-get-the-code-and-the-configuration); the fit is computed from the measured memory and was not tried.
-- 8 GiB: the limits of `.env.example` add up to 7.75 GiB (6.5 for `llm`, 0.5 for `api`, 0.75 for the system), and a VPS sold as 8 GB often reports a little less (an estimate). The measured use is below the limits, but the margin is small.
+- 8 GiB: the limits of `.env.example` add up to 7.75 GiB (6.5 for `llm`, 0.5 for `api`, 0.75 for the system), and a VPS sold as 8 GB often reports a little less (an estimate). The measured use is below the limits, but the margin is small: the `llm` limit sits right at the rule of the sizing table (RAM minus about 1 GiB).
 - 16 GiB: the same choice as 8 GiB. Models of 7 to 8B parameters were not measured on this machine.
 
 Memory limits come from the sizing table, not from these blocks.
@@ -132,7 +132,7 @@ LLM_DISABLE_THINKING=false
 ```
 <!-- model-env:qwen3-4b-instruct-2507-q4km:end -->
 
-The default and the most accurate on the set (34 of 60 rows with both fields right, 52 strict category, 38 exact severity), and the slowest (p50 10.2 s in the evaluation, 8.1 s through the API). In one row (`py-012`) it repeated an email address from the error text; the service masks email addresses, so the client does not get it. Its `llm` container peaked at 5.77 GiB under a 6 GiB limit, with 2.28 GiB of page cache and 3.06 GiB of anonymous memory. The peak was capped by the limit, so `.env.example` gives it 6.5 GiB.
+The default and the most accurate on the set (34 of 60 rows with both fields right, 52 strict category, 38 exact severity), and the slowest (p50 10.2 s in the evaluation, 8.1 s through the API). In one row (`py-012`) it repeated an email address from the error text; the service masks email addresses, so the client does not get it. Its `llm` container peaked at 5.77 GiB under a 6 GiB limit, with 2.28 GiB of page cache and 3.06 GiB of anonymous memory. The peak came close to the limit (96%), so with more room it may take more, and `.env.example` gives it 6.5 GiB.
 
 ### Qwen3.5-2B
 
@@ -273,14 +273,16 @@ Size `.env` before the first start. The defaults fit the machine the measurement
 
 | Server | Model | `LLM_CPUS` | `LLAMA_ARG_THREADS` | `API_CPUS` | `LLAMA_ARG_N_PARALLEL` | `LLAMA_ARG_CTX_SIZE` | `LLM_MEM_LIMIT` | `REQUEST_TIMEOUT_S` | `QUEUE_TIMEOUT_S` |
 |---|---|---|---|---|---|---|---|---|---|
-| 8 vCPU, 8 GB or more (`.env.example`; measured with a 6g limit) | default | 6 | 6 | 1 | 2 | 8192 | 6656m | 120 | 30 |
+| 8 vCPU, 8 GB or more (`.env.example`; measured with a 6g limit, raised after the measurement) | default | 6 | 6 | 1 | 2 | 8192 | 6656m | 120 | 30 |
 | 4 vCPU, 8 GB (estimate) | default | 3 | 3 | 0.5 | 1 | 4096 | 6656m | 300 | 90 |
 | 4 vCPU, 4 GB (estimate) | Qwen3.5-2B | 3 | 3 | 0.5 | 1 | 4096 | 2500m | 180 | 60 |
-| 2 vCPU, 4 GB or more (estimate) | Qwen3.5-2B | 1.5 | 1 | 0.5 | 1 | 4096 | 2500m | 300 | 150 |
+| 2 vCPU, 4 GB or more (estimate) | Qwen3.5-2B | 1.5 | 1 | 0.5 | 1 | 4096 | 2500m | 300 | 120 |
 
 - Keep `LLAMA_ARG_CTX_SIZE` at least `LLAMA_ARG_N_PARALLEL` × 4096: the context is split between slots, and a 3000-character input needs about 4096 tokens of a slot.
-- Keep `LLM_MEM_LIMIT` below the RAM of the server minus about 1 GB for the system, Docker and `api` (the VPS table above reserves 0.75 GiB plus the measured peak of `api`), and above the `llm need` of your model in the benchmark tables (5.77 GiB for the default, 2.34 GiB for Qwen3.5-2B). A limit above the RAM protects nothing.
-- The rows marked estimate were not measured. Their times are the 8 vCPU results (the p50 of 20 requests and one long input) scaled by 2 for 3 threads and by 6 for one thread. With one slot, a long request at the head of the queue can make the requests behind it end in 429, and a retry after an invalid answer may not fit `REQUEST_TIMEOUT_S` and end in 504.
+- The rows with Qwen3.5-2B start from its block in [Choosing a model](#choosing-a-model), including `LLM_DISABLE_THINKING=true`: without it every answer of that model is empty. Then set the values of the row.
+- For a server between these sizes keep `LLM_CPUS` at most the number of cores minus one and `LLAMA_ARG_THREADS` equal to it.
+- Keep `LLM_MEM_LIMIT` below the RAM of the server minus about 1 GiB for the system, Docker and `api` (the VPS table above reserves 0.75 GiB plus the measured peak of `api`), and above the `llm need` of your model in the benchmark tables (5.77 GiB for the default, 2.34 GiB for Qwen3.5-2B). A limit above the RAM protects nothing.
+- The rows marked estimate were not measured. Their times are the 8 vCPU results (the p50 of 20 requests and one long input) scaled by 2 for 3 threads and by 6 for one thread. With one slot, a long request at the head of the queue can make the requests behind it end in 429, and a retry after an invalid answer may not fit `REQUEST_TIMEOUT_S` and end in 504. The limits of the 2 vCPU row take both cores, so the host itself, Docker and the proxy compete with them, which the scaling does not count. On 4 GB, 2500m leaves about 0.1 GiB above the measured 2.34 GiB of Qwen3.5-2B, and the limits add up to 3.7 GiB; both rows are estimates with almost no margin. On 2 vCPU a full queue of 4 can wait longer than `QUEUE_TIMEOUT_S` (about 140 s, an estimate), so lower `MAX_QUEUE` to 3 there; the value stays at 120 because the `openai` client does not retry when `Retry-After` is above 120 s.
 - On 2 vCPU the table takes Qwen3.5-2B by judgement, not by the rule of [Choosing a model](#choosing-a-model), which looks only at RAM: the long input of the default model would take about 425 s on one thread (an estimate).
 
 ### 4. First start
@@ -331,7 +333,7 @@ classifier.example.com {
 sudo systemctl reload caddy
 ```
 
-Caddy has no upstream timeout by default ([reverse_proxy](https://caddyserver.com/docs/caddyfile/directives/reverse_proxy)). If you set one, keep it above `QUEUE_TIMEOUT_S + REQUEST_TIMEOUT_S` (150 s with `.env.example`, up to 450 s for the rows of the sizing table). Before enabling ufw allow SSH, then HTTP and HTTPS:
+Caddy has no upstream timeout by default ([reverse_proxy](https://caddyserver.com/docs/caddyfile/directives/reverse_proxy)). If you set one, keep it above `QUEUE_TIMEOUT_S + REQUEST_TIMEOUT_S` (150 s with `.env.example`, up to 420 s for the rows of the sizing table). Before enabling ufw allow SSH, then HTTP and HTTPS:
 
 ```sh
 sudo ufw allow OpenSSH
@@ -530,7 +532,7 @@ All four runs used the same settings: temperature 0, `MAX_OUTPUT_TOKENS` 256, `M
 | `qwen3-4b-instruct-2507-q4km` | `bartowski/Qwen_Qwen3-4B-Instruct-2507-GGUF`, `Qwen_Qwen3-4B-Instruct-2507-Q4_K_M.gguf` | 2497280736 |
 | `qwen3.5-2b-q4km` | `bartowski/Qwen_Qwen3.5-2B-GGUF`, `Qwen_Qwen3.5-2B-Q4_K_M.gguf` | 1396198496 |
 
-Hardware: 8 vCPU AMD EPYC Rome (AVX2, no GPU), 15 GB RAM, shared with another project. The `llm` container ran on podman 5.7 with a 6 CPU limit and llama-server `b12352-5676dfbe0`. Each result file records the runtime env of the container, `/props`, the git commit, the hashes of the set and the prompt, and the load average before and after the run. The 1-minute load average before the warm-up was 1.47 for Qwen3.5-2B, 1.42 for Granite 4.0 1B, 1.50 for Granite 4.1 3B and 1.20 for Qwen3-4B. The Granite 4.1 3B run started exactly at the threshold of 1.5, so step 3 of the rule would ignore its speed; step 1 decided the choice, so this did not matter.
+Hardware: 8 vCPU AMD EPYC Rome (AVX2, no GPU), 15 GB RAM, shared with another project. The `llm` container ran on podman 5.7 with a 6 CPU limit and llama-server `b12352-5676dfbe0`. Each result file records the runtime env of the container, `/props`, the git commit, the hashes of the set and the prompt, and the load average before and after the run. The 1-minute load average before the warm-up was 1.47 for Qwen3.5-2B, 1.42 for Granite 4.0 1B, 1.50 for Granite 4.1 3B and 1.20 for Qwen3-4B. The Granite 4.1 3B run started exactly at the threshold of 1.5, so step 3 of the rule would ignore its speed; steps 1 and 2 decide the choice, so this did not matter.
 
 ### Metrics
 
@@ -609,7 +611,7 @@ The three models that also ran a day earlier gave the same category and severity
 
 ### The choice
 
-The rule was written down before the runs and is implemented in `choose_model`. One condition was narrowed after the first Granite run: the load average after a run no longer counts, because llama-server alone pushes it to about 10 under the CPU limit. Step 1 decided the choice, so the change did not affect it.
+The rule was written down before the runs and is implemented in `choose_model`; two changes came after the runs, and the second one moved the default. The first narrowed one condition after the first Granite run: the load average after a run no longer counts, because llama-server alone pushes it to about 10 under the CPU limit. Steps 1 and 2 decide the choice and step 3 is not reached, so this change did not affect it.
 
 1. A model is out if fewer than 57 of 60 answers are valid, fewer than 54 are valid on the first try, or any secret leaks.
 2. Among the rest, the leaders have the most rows with both fields right. A model stays a candidate if it is at most 6 rows behind the leaders and McNemar against each leader gives p of at least 0.05.
@@ -629,7 +631,7 @@ The default is `MODEL_ALIAS=qwen3-4b-instruct-2507-q4km` in `.env.example`, with
 - The prompt was tuned on Granite 4.1 3B, which favours it. Temperature 0 differs from the sampling the Qwen vendors recommend (Qwen3-4B T 0.7, Qwen3.5-2B T 1.0), which may understate both Qwen models.
 - The quantizers differ: IBM for both Granite models, bartowski (imatrix) for both Qwen models.
 - Latency was measured on podman on a shared machine, on short inputs only, while another project's stack was running. Benchmarks of the whole service are in the next section.
-- Seven secret rows show leaks when they happen; zero leaks on seven rows does not prove a model never leaks. For Granite 4.0 1B one row decided the exclusion (it followed the injection in `unk-003`), and that row was not repeated, so whether it happens every time is not known.
+- Seven secret rows show leaks when they happen; zero leaks on seven rows does not prove a model never leaks. For both Granite models one row decided the exclusion (they followed the injection in `unk-003`), and that row was not repeated, so whether it happens every time is not known.
 - Temperature 0 is not bit-exact here. An earlier repeat run of Qwen3.5-2B, whose file is not kept, changed the labels of 3 of 60 rows (`py-007`, `infra-009`, `ru-002`) with the same score of 24 rows with both fields right. The cause is assumed to be the prompt cache and batch boundaries of llama-server; differences of a few rows between models are within this as well.
 - Models of 7 to 8B parameters were not evaluated: on this shared 8 vCPU machine a run of Qwen3-8B took most of the CPU and was stopped. In a single request before it (output not kept), at an 8 GiB container limit, the kernel was already evicting its weights from memory (anonymous memory 4.32 GiB).
 - The runs used llama-server's default prompt cache of 8192 MiB; the stack now ships `LLAMA_ARG_CACHE_RAM=0`, whose effect on speed was not measured.
@@ -703,7 +705,7 @@ For the default model (Qwen3-4B-Instruct-2507, Q4_K_M):
 | Resource | Requirement | Source |
 |---|---|---|
 | CPU | measured on x86_64 with AVX2, 6 threads on 8 vCPU; smaller machines were not measured | `CPU llm, %` above |
-| RAM | at least 5.77 GiB for `llm` and 0.09 GiB for `api` (`llm need` and `api peak`); `.env.example` limits `llm` to 6.5 GiB | last table |
+| RAM | 5.77 GiB for `llm` at the peak, a lower bound with more room, and 0.09 GiB for `api` (`llm need` and `api peak`); `.env.example` limits `llm` to 6.5 GiB | last table |
 | Disk | 1.0 GiB for the two images and 2.3 GiB for the model file; every other model adds its GGUF to the `models` volume | memory table |
 
 The peak of 5.77 GiB was taken under `LLM_MEM_LIMIT=6g` and held 2.28 GiB of page cache next to 3.06 GiB of anonymous memory. A peak at 96% of the limit is bounded by it, so 5.77 GiB is a lower bound of what the model takes with more room; the default limit is now 6.5 GiB. By the same measure Qwen3.5-2B needs 2.34 GiB and Granite 4.1 3B 4.29 GiB. Speed on machines with fewer cores was not measured.
@@ -733,7 +735,7 @@ TODO:
 - Run the 50-request series for the default model `qwen3-4b-instruct-2507-q4km`; here only `qwen3.5-2b-q4km` ran it.
 - Run the live tests against the model, including `tests/live/test_openai_live.py` through the official client.
 - Benchmark Granite 4.0 1B and evaluate a 7 to 8B model on a machine that can take the load.
-- Repeat the row that decided the exclusion of Granite 4.0 1B (`unk-003`) to see whether it follows the injection every time.
+- Repeat the row that decided the exclusion of both Granite models (`unk-003`) to see whether they follow the injection every time.
 - Measure the memory of the default model on Docker with the swap counters and with unique inputs, and the timeouts of the smaller servers in the sizing table.
 - Improve severity (38 of 60 exact for the default model) with a new prompt; this needs new runs of every model.
 - Record an answer of the running stack for [Classify an error](#classify-an-error); the example there comes from the evaluation run.

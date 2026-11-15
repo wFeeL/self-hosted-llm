@@ -232,6 +232,7 @@ async def test_retry_after_length_without_text(content: str | None) -> None:
     first, second = fake.messages
     assert len(second) == len(first)
     assert second[-1]["role"] == "user"
+    assert second[-1]["content"].startswith(first[-1]["content"])
     assert second[-1]["content"].endswith(CUT_OFF_CORRECTION)
 
 

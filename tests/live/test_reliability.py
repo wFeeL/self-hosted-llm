@@ -5,6 +5,7 @@ import logging
 import os
 import random
 import time
+from pathlib import Path
 
 import anyio
 import httpx
@@ -16,11 +17,18 @@ from pydantic import TypeAdapter
 from error_classifier.api.app import create_app
 from error_classifier.config import Settings
 from error_classifier.evaluation.metrics import DEFAULT_MODEL
+from error_classifier.evaluation.results import read_result
 
 # Read at import, before the autouse clean_env fixture runs.
 LLM_URL = os.environ.get("LLM_URL", "http://127.0.0.1:8080/v1")
 MODEL_ALIAS = os.environ.get("MODEL_ALIAS", DEFAULT_MODEL)
-DISABLE_THINKING = TypeAdapter(bool).validate_python(os.environ.get("LLM_DISABLE_THINKING", "true"))
+# The default follows the evaluation run of the default model, so a model that thinks gets it off.
+_EVALUATED = read_result(
+    Path(__file__).resolve().parents[2] / "eval/results" / f"{DEFAULT_MODEL}.json"
+).meta.settings.disable_thinking
+DISABLE_THINKING = TypeAdapter(bool).validate_python(
+    os.environ.get("LLM_DISABLE_THINKING", _EVALUATED)
+)
 
 pytestmark = [pytest.mark.live, pytest.mark.anyio]
 
