@@ -1,3 +1,9 @@
+import json
+import shutil
+from pathlib import Path
+from typing import cast
+
+import pytest
 from bench_files import GIB, bench_file
 
 from error_classifier.benchmark.report import BenchFile, Memory, llm_need_bytes
@@ -8,6 +14,7 @@ from error_classifier.recommend import (
     VPS_TIERS_GIB,
     TierChoice,
     choose_per_tier,
+    recommend_text,
     render_tiers,
 )
 
@@ -145,3 +152,65 @@ def test_render_without_unmeasured_has_no_footer() -> None:
         "| VPS RAM | Models that fit | Recommended | Reason |\n|---|---|---|---|\n"
         "| 2 GiB | a | a | x |\n"
     )
+
+
+def test_render_lists_models_with_incomplete_memory_after_not_measured() -> None:
+    text = render_tiers([TierChoice(2, ("a",), "a", "x")], ["c"], ["d", "e"])
+    assert text.endswith("\nNot measured: c.\n\nMemory incomplete: d, e.\n")
+
+
+def test_render_with_only_incomplete_memory() -> None:
+    text = render_tiers([TierChoice(2, ("a",), "a", "x")], [], ["d"])
+    assert text.endswith("| 2 GiB | a | a | x |\n\nMemory incomplete: d.\n")
+
+
+ROOT = Path(__file__).resolve().parents[1]
+
+
+@pytest.fixture
+def tree(tmp_path: Path) -> Path:
+    (tmp_path / "eval").mkdir()
+    shutil.copytree(ROOT / "eval" / "results", tmp_path / "eval" / "results")
+    shutil.copy(ROOT / "eval" / "dataset.jsonl", tmp_path / "eval" / "dataset.jsonl")
+    shutil.copytree(ROOT / "bench" / "results", tmp_path / "bench" / "results")
+    return tmp_path
+
+
+def _set_in_summary(path: Path, section: str, key: str, value: str | None) -> None:
+    lines = path.read_text(encoding="utf-8").splitlines()
+    data = cast("dict[str, dict[str, object]]", json.loads(lines[-1]))
+    data[section][key] = value
+    lines[-1] = json.dumps(data)
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
+def test_recommend_text_on_the_repository_files_works(tree: Path) -> None:
+    assert recommend_text(tree) == recommend_text(ROOT)
+
+
+def test_recommend_text_names_a_bench_file_with_incomplete_memory(tree: Path) -> None:
+    target = next((tree / "bench" / "results").glob("*granite-4.1*"))
+    _set_in_summary(target, "memory", "api_peak", None)
+
+    text = recommend_text(tree)
+
+    assert text.endswith("Memory incomplete: granite-4.1-3b-q4km.\n")
+    assert "granite-4.1-3b-q4km," not in text
+
+
+def test_recommend_text_refuses_evaluation_files_from_different_prompts(tree: Path) -> None:
+    target = next((tree / "eval" / "results").glob("granite-4.1*.json"))
+    data = json.loads(target.read_text(encoding="utf-8"))
+    data["meta"]["prompt_sha256"] = "other"
+    target.write_text(json.dumps(data), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="prompts"):
+        recommend_text(tree)
+
+
+def test_recommend_text_refuses_bench_files_from_different_inputs(tree: Path) -> None:
+    target = next((tree / "bench" / "results").glob("*granite-4.1*"))
+    _set_in_summary(target, "config", "inputs_sha256", "other")
+
+    with pytest.raises(ValueError, match="inputs"):
+        recommend_text(tree)

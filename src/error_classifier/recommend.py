@@ -3,10 +3,15 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Final
 
-from error_classifier.benchmark.report import BenchFile, llm_need_bytes, read_bench
+from error_classifier.benchmark.report import (
+    BenchFile,
+    llm_need_bytes,
+    read_bench,
+    render_bench_report,
+)
 from error_classifier.evaluation.dataset import DEFAULT_DATASET, load_dataset
 from error_classifier.evaluation.metrics import ModelRun, choose_model
-from error_classifier.evaluation.results import model_run, read_result
+from error_classifier.evaluation.results import model_run, read_result, render_report
 
 __all__ = [
     "DEFAULT_TIER_GIB",
@@ -33,6 +38,10 @@ class TierChoice:
     reason: str
 
 
+def _memory_incomplete(bench: BenchFile) -> bool:
+    return llm_need_bytes(bench) is None or bench.summary.memory.api_peak is None
+
+
 def _fits(bench: BenchFile, tier_gib: int) -> bool:
     need = llm_need_bytes(bench)
     api_peak = bench.summary.memory.api_peak
@@ -57,7 +66,9 @@ def choose_per_tier(runs: Sequence[ModelRun], benches: Sequence[BenchFile]) -> l
     return choices
 
 
-def render_tiers(choices: Sequence[TierChoice], unmeasured: Sequence[str]) -> str:
+def render_tiers(
+    choices: Sequence[TierChoice], unmeasured: Sequence[str], incomplete: Sequence[str] = ()
+) -> str:
     lines = [
         "| VPS RAM | Models that fit | Recommended | Reason |",
         "|---|---|---|---|",
@@ -69,6 +80,8 @@ def render_tiers(choices: Sequence[TierChoice], unmeasured: Sequence[str]) -> st
     text = "\n".join(lines) + "\n"
     if unmeasured:
         text += f"\nNot measured: {', '.join(unmeasured)}.\n"
+    if incomplete:
+        text += f"\nMemory incomplete: {', '.join(incomplete)}.\n"
     return text
 
 
@@ -76,7 +89,11 @@ def recommend_text(root: Path) -> str:
     items = load_dataset(root / DEFAULT_DATASET)
     docs = [read_result(p) for p in sorted((root / "eval" / "results").glob("*.json"))]
     benches = [read_bench(p) for p in sorted((root / "bench" / "results").glob("*.jsonl"))]
+    # Rendering runs the consistency checks of both reports, the text is not used.
+    render_report(docs, items)
+    render_bench_report(benches)
     runs = [model_run(doc, items) for doc in docs]
     measured = {b.summary.config.model for b in benches}
     unmeasured = sorted(run.model for run in runs if run.model not in measured)
-    return render_tiers(choose_per_tier(runs, benches), unmeasured)
+    incomplete = sorted(b.summary.config.model for b in benches if _memory_incomplete(b))
+    return render_tiers(choose_per_tier(runs, benches), unmeasured, incomplete)

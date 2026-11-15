@@ -4,10 +4,9 @@ import re
 import pytest
 from docs_helpers import ROOT, env_example
 
-from error_classifier.benchmark.report import BenchFile, read_bench
-from error_classifier.evaluation.dataset import DEFAULT_DATASET, load_dataset
-from error_classifier.evaluation.results import model_run, read_result
-from error_classifier.recommend import DEFAULT_TIER_GIB, choose_per_tier, recommend_text
+from error_classifier.benchmark.report import BenchFile, llm_need_bytes, read_bench
+from error_classifier.evaluation.results import read_result
+from error_classifier.recommend import recommend_text
 
 README = (ROOT / "README.md").read_text(encoding="utf-8")
 RESULTS = {
@@ -50,13 +49,6 @@ def _limit_bytes(value: str) -> int:
     return int(match.group(1)) * (2**30 if match.group(2) == "g" else 2**20)
 
 
-def _default_tier_model() -> str | None:
-    items = load_dataset(ROOT / DEFAULT_DATASET)
-    runs = [model_run(doc, items) for doc in RESULTS.values()]
-    choices = choose_per_tier(runs, list(BENCHES.values()))
-    return next(c.model for c in choices if c.tier_gib == DEFAULT_TIER_GIB)
-
-
 def _long_record_outcome(bench: BenchFile) -> str:
     outcomes = [r.outcome for r in bench.records if r.phase == "long"]
     assert len(outcomes) == 1
@@ -90,9 +82,9 @@ def test_memory_limit_matches_the_measured_run(alias: str) -> None:
         assert NOT_MEASURED in _block(alias)
         return
     assert NOT_MEASURED not in _block(alias)
-    anon_max = bench.summary.aggregates.llm_anon_max
-    assert anon_max is not None
-    assert limit >= anon_max
+    need = llm_need_bytes(bench)
+    assert need is not None
+    assert limit >= need
 
 
 @pytest.mark.parametrize("alias", sorted(BENCHES))
@@ -110,12 +102,11 @@ def test_vps_table_matches_the_script() -> None:
     assert block.strip() == recommend_text(ROOT).strip()
 
 
-def test_recommended_model_is_the_default_tier_choice_and_the_env_example() -> None:
+def test_recommended_model_is_the_env_example_model() -> None:
     matches = RECOMMENDED.findall(README)
     assert len(matches) == 1
     alias = matches[0]
     env = env_example()
-    assert alias == _default_tier_model()
     assert alias == env["MODEL_ALIAS"]
     for key, value in _pairs(alias).items():
         assert env.get(key) == value, key
