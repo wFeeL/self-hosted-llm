@@ -36,6 +36,86 @@ Response from the stack described above:
 - The service talks to the model only through the OpenAI-compatible API of llama-server (`/v1/chat/completions`). The mapping of runtime errors (context overflow, loading state) and the thinking switch are specific to llama-server.
 - Categories, severity levels and error codes are listed in the Classification and Error codes sections below.
 
+## Choosing a model
+
+The model is configuration, not code: set the variables of one block below in `.env` and recreate `llm` with `docker compose up -d`. A new model is downloaded into the `models` volume on its first start. Any other GGUF on Hugging Face works the same way; `LLM_DISABLE_THINKING=true` is needed for models that think by default.
+
+Recommended: `qwen3.5-2b-q4km`
+
+The table applies the evaluation rule to the models whose measured memory fits each VPS size: `llm need` and `api peak` from the benchmarks plus 0.75 GiB for the system and Docker (an estimate). `scripts/recommend.py` prints it, and a test checks that it matches.
+
+<!-- vps-table:start -->
+| VPS RAM | Models that fit | Recommended | Reason |
+|---|---|---|---|
+| 2 GiB | - | none | no measured model fits |
+| 4 GiB | qwen3.5-2b-q4km | qwen3.5-2b-q4km | the only model that passed the validity and leak thresholds |
+| 8 GiB | granite-4.1-3b-q4km, qwen3-4b-instruct-2507-q4km, qwen3.5-2b-q4km | qwen3.5-2b-q4km | the only model that passed the validity and leak thresholds |
+| 16 GiB | granite-4.1-3b-q4km, qwen3-4b-instruct-2507-q4km, qwen3.5-2b-q4km | qwen3.5-2b-q4km | the only model that passed the validity and leak thresholds |
+
+Not measured: granite-4.0-1b-q4km.
+<!-- vps-table:end -->
+
+- 2 GiB: no measured model fits. Granite 4.0 1B would be the candidate by size, but its memory was not measured and it followed the injection in the evaluation.
+- 16 GiB: the same choice as 8 GiB. Models of 7 to 8B parameters were not measured on this machine.
+
+### Qwen3.5-2B (default)
+
+<!-- model-env:qwen3.5-2b-q4km:start -->
+```
+MODEL_ALIAS=qwen3.5-2b-q4km
+LLAMA_ARG_HF_REPO=bartowski/Qwen_Qwen3.5-2B-GGUF
+LLAMA_ARG_HF_FILE=Qwen_Qwen3.5-2B-Q4_K_M.gguf
+LLM_DISABLE_THINKING=true
+LLM_MEM_LIMIT=6g
+```
+<!-- model-env:qwen3.5-2b-q4km:end -->
+
+The default and the only model that passed the leak check. Fast (p50 4.2 s) and small (2.34 GiB for `llm`), but the least accurate on the strict category.
+
+### Qwen3-4B-Instruct-2507
+
+<!-- model-env:qwen3-4b-instruct-2507-q4km:start -->
+```
+MODEL_ALIAS=qwen3-4b-instruct-2507-q4km
+LLAMA_ARG_HF_REPO=bartowski/Qwen_Qwen3-4B-Instruct-2507-GGUF
+LLAMA_ARG_HF_FILE=Qwen_Qwen3-4B-Instruct-2507-Q4_K_M.gguf
+LLM_DISABLE_THINKING=false
+LLM_MEM_LIMIT=6g
+```
+<!-- model-env:qwen3-4b-instruct-2507-q4km:end -->
+
+The most accurate on the set (34 of 60 rows with both fields right) and the slowest (p50 10.2 s). It repeated an email address from one error text, so take it when accuracy matters more than that risk. It needs 5.77 GiB for `llm`, which leaves about 0.2 GiB under `LLM_MEM_LIMIT=6g`; raise the limit if the machine allows.
+
+### Granite 4.1 3B
+
+<!-- model-env:granite-4.1-3b-q4km:start -->
+```
+MODEL_ALIAS=granite-4.1-3b-q4km
+LLAMA_ARG_HF_REPO=ibm-granite/granite-4.1-3b-GGUF
+LLAMA_ARG_HF_FILE=granite-4.1-3b-Q4_K_M.gguf
+LLM_DISABLE_THINKING=false
+LLM_MEM_LIMIT=6g
+```
+<!-- model-env:granite-4.1-3b-q4km:end -->
+
+Accuracy close to Qwen3.5-2B at about twice the latency. It followed the injection and repeated an email address, so it is not recommended where error texts can come from untrusted sources.
+
+### Granite 4.0 1B
+
+<!-- model-env:granite-4.0-1b-q4km:start -->
+```
+MODEL_ALIAS=granite-4.0-1b-q4km
+LLAMA_ARG_HF_REPO=ibm-granite/granite-4.0-1b-GGUF
+LLAMA_ARG_HF_FILE=granite-4.0-1b-Q4_K_M.gguf
+LLM_DISABLE_THINKING=false
+LLM_MEM_LIMIT=6g
+# Memory not measured
+```
+<!-- model-env:granite-4.0-1b-q4km:end -->
+
+The smallest file (about 1 GB) and the fastest (p50 3.9 s), with the weakest category accuracy (46 of 60). It followed the injection. Its memory was not measured.
+
+
 ## Architecture
 
 Two containers make up the stack: `api` (FastAPI) and `llm` (llama-server from llama.cpp).
