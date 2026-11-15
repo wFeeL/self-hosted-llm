@@ -24,8 +24,13 @@ REQUIRED_RUNTIME = (
     "LLAMA_ARG_THREADS",
     "LLAMA_ARG_BATCH",
 )
-EXPECTED_MODELS = {"granite-4.1-3b-q4km", "qwen3-4b-instruct-2507-q4km", "qwen3.5-2b-q4km"}
-THINKING_MODEL = "qwen3.5-2b-q4km"
+EXPECTED_MODELS = {
+    "granite-4.0-1b-q4km",
+    "granite-4.1-3b-q4km",
+    "qwen3-4b-instruct-2507-q4km",
+    "qwen3.5-2b-q4km",
+}
+THINKING_MODELS = {"qwen3.5-2b-q4km"}
 
 
 def _docs() -> list[ResultDoc]:
@@ -48,10 +53,10 @@ def _env_example() -> dict[str, str]:
     return dict(re.findall(r"^([A-Z_]+)=(.*)$", text, re.MULTILINE))
 
 
-def test_three_results_exist() -> None:
+def test_four_results_exist() -> None:
     docs = _docs()
     assert {doc.meta.model for doc in docs} == EXPECTED_MODELS
-    assert len(RESULTS) == 3
+    assert len(RESULTS) == 4
     for path, doc in zip(RESULTS, docs, strict=True):
         assert path.name == f"{doc.meta.model}.json"
 
@@ -78,7 +83,7 @@ def test_results_share_settings() -> None:
     for doc in docs:
         shared = doc.meta.settings.model_dump(exclude={"disable_thinking"})
         assert shared == defaults, doc.meta.model
-        assert doc.meta.settings.disable_thinking == (doc.meta.model == THINKING_MODEL)
+        assert doc.meta.settings.disable_thinking == (doc.meta.model in THINKING_MODELS)
         assert doc.meta.runtime_env["LLAMA_ARG_ALIAS"] == doc.meta.model
         assert doc.summary.truncated == 0, doc.meta.model
         for key in REQUIRED_RUNTIME:

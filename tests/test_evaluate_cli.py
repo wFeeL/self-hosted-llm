@@ -361,7 +361,7 @@ def test_report_prints_tables(
     expected = render_report(docs, ITEMS)
     out = capsys.readouterr().out
     assert out == expected
-    assert "Choice by rule D8" in out
+    assert "Choice by the rule" in out
 
 
 def test_report_rejects_partial(

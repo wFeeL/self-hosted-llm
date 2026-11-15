@@ -308,9 +308,15 @@ def render_report(docs: Sequence[ResultDoc], items: Sequence[EvalItem]) -> str:
         parts.append(
             _table(["Pair", "Both only first", "Both only second", "p (McNemar)"], pair_rows)
         )
+        k = len(pair_rows)
+        noun = "pair" if k == 1 else "pairs"
+        parts.append(
+            f"p values are not corrected for multiple comparisons: {k} {noun}; "
+            f"with Holm's correction the smallest p is significant only below {0.05 / k:.4f}."
+        )
 
     choice = choose_model(runs)
-    lines = [f"Choice by rule D8: {choice.model or 'none'} ({choice.reason})."]
+    lines = [f"Choice by the rule: {choice.model or 'none'} ({choice.reason})."]
     if choice.common_p50_ms:
         lines.append(
             "p50 on common rows: "
