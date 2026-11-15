@@ -15,7 +15,7 @@ until curl -fsS http://127.0.0.1:8000/ready; do sleep 5; done
 - Every `docker compose` command needs `.env` to be present.
 - If the network is slow and `llm` becomes unhealthy before the download ends, run `docker compose up -d` again after the download, or raise `LLM_START_PERIOD` in `.env`.
 - `/ready` answers 503 until the runtime has loaded the model, `/health` always answers 200.
-- The API has no authentication and listens on `127.0.0.1` by default; on a VPS keep `API_BIND` as is and use a reverse proxy.
+- The API listens on `127.0.0.1` by default. With `API_KEY` set in `.env`, `/classify` and `/v1/*` require `Authorization: Bearer <key>`; `/health` and `/ready` stay open for the healthchecks. On a VPS keep `API_BIND` as is, set the key and use a reverse proxy.
 - The stack has been checked with `podman compose`, not with Docker yet.
 - Live tests (`uv run pytest -m live`) take `MODEL_ALIAS` and `API_URL` from the shell environment, not from `.env`.
 
@@ -35,6 +35,51 @@ Response of the stack when Granite 4.1 3B was its model (the default is now Qwen
 - `summary` and `suggested_action` are always in English, even for an error text in another language. The example in the task statement is in Russian; this is a deliberate difference.
 - The service talks to the model only through the OpenAI-compatible API of llama-server (`/v1/chat/completions`). The mapping of runtime errors (context overflow, loading state) and the thinking switch are specific to llama-server.
 - Categories, severity levels and error codes are listed in the Classification and Error codes sections below.
+
+## OpenAI-compatible API
+
+Next to `POST /classify` the service answers the OpenAI chat completions protocol, so the official `openai` client and tools built on it can call it. The answer of the assistant is the classification as a JSON string.
+
+| Endpoint | What it does |
+|---|---|
+| `GET /v1/models` | lists the one served model, its id is `MODEL_ALIAS` |
+| `GET /v1/models/{model}` | the same entry, or 404 `model_not_found` for another name |
+| `POST /v1/chat/completions` | classifies the text of the last `user` message |
+
+```sh
+curl -sS http://127.0.0.1:8000/v1/chat/completions \
+  -H "Authorization: Bearer $API_KEY" -H 'content-type: application/json' \
+  -d '{"model": "qwen3.5-2b-q4km", "messages": [{"role": "user", "content": "TypeError: Cannot read properties of undefined (reading '"'"'map'"'"')"}]}'
+```
+
+```python
+import json
+from openai import OpenAI
+
+client = OpenAI(base_url="http://127.0.0.1:8000/v1", api_key="<API_KEY or any string>")
+answer = client.chat.completions.create(
+    model="qwen3.5-2b-q4km",
+    messages=[
+        {
+            "role": "user",
+            "content": "TypeError: Cannot read properties of undefined (reading 'map')",
+        }
+    ],
+)
+print(json.loads(answer.choices[0].message.content))
+```
+
+How requests are read:
+
+- The last message must have the role `user`; its text (a string, or text parts joined by new lines) is the error to classify. Earlier messages and the client's `system` or `developer` messages are ignored, so a chat history does not change the answer and cannot change the prompt.
+- `model` must be the served alias; another name gets 404 rather than an answer from a different model under that name.
+- Sampling parameters (`temperature`, `top_p`, `max_tokens`, `max_completion_tokens`, `seed`, `stop`, penalties) and `response_format` of type `text` or `json_object` are accepted and ignored: the classification uses the settings from `.env`.
+- Parameters that would change the shape of the answer are refused with 400 and the name in `param`: `stream: true`, `n` above 1, `tools`, `tool_choice` other than `none`, `functions`, `function_call`, `logprobs: true`, `top_logprobs`, `response_format` of type `json_schema`, `audio`, and `modalities` other than `text`. Explicit `null` and empty lists pass.
+- The answer has `usage` when the runtime reported both token counts, and two extra fields, `truncated` and `latency_ms`, as in `/classify`.
+
+Errors use the OpenAI shape, `{"error": {"code", "message", "type", "param"}}`, with the same codes and HTTP statuses as `/classify`, so the client raises `BadRequestError`, `AuthenticationError`, `NotFoundError`, `RateLimitError` or `InternalServerError`. Answers 500, 502 and 504 carry `x-should-retry: false`, because the service has already retried the model once and a 504 means another `REQUEST_TIMEOUT_S` of waiting; the client honours it. 429 and 503 stay retryable: with the defaults (`max_retries=2`, `QUEUE_TIMEOUT_S=30`) a client facing a full queue waits about 150 s before it gets `RateLimitError`. The `openai` 3.51 client waits for `Retry-After` only up to 120 s and does not retry above that, so with `QUEUE_TIMEOUT_S` over 120 a full queue fails at once; set `max_retries` in the client to what suits you.
+
+The tests in `tests/test_openai_api.py` call the service through the official client (version 3.51) over an in-process transport and validate the raw answers with the client's own models. A live run against the model was not made on this machine.
 
 ## Choosing a model
 
