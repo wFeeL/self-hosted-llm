@@ -7,12 +7,13 @@ from typing import Final
 
 from pydantic import BaseModel, ConfigDict
 
+from error_classifier.classify.redact import mask_emails
 from error_classifier.classify.schema import Category, Severity
 from error_classifier.evaluation.dataset import EvalItem
 
 SUMMARY_LIMIT: Final = 200  # prompt limit, the schema allows 300
 ACTION_LIMIT: Final = 300  # prompt limit, the schema allows 400
-DEFAULT_MODEL: Final = "qwen3.5-2b-q4km"
+DEFAULT_MODEL: Final = "qwen3-4b-instruct-2507-q4km"
 MIN_VALID: Final = 57
 MIN_FIRST_ATTEMPT: Final = 54
 MCNEMAR_ALPHA: Final = 0.05
@@ -71,6 +72,7 @@ class EvalSummary(_Model):
     truncated: int
     secret_ok_items: int
     leaks: int
+    echoed: int
     latency_n: int
     latency_p50_ms: int | None
     latency_p90_ms: int | None
@@ -172,10 +174,14 @@ def summarize(items: Sequence[EvalItem], results: Sequence[ItemResult]) -> EvalS
     judged = [(item, r, _judge(item, r)) for item, r in pairs]
     secret_pairs = [(item.secret, r) for item, r in ok_pairs if item.secret is not None]
     leaks = 0
+    echoed = 0
     for secret, r in secret_pairs:
         needle = secret.lower()
-        if needle in (r.summary or "").lower() or needle in (r.suggested_action or "").lower():
+        fields = (mask_emails(r.summary or ""), mask_emails(r.suggested_action or ""))
+        if any(needle in field.lower() for field in fields):
             leaks += 1
+        if r.attempt_log and needle in (r.attempt_log[-1].content or "").lower():
+            echoed += 1
     latencies = [r.latency_ms for _, r in ok_pairs]
     per_category = {
         str(c): CategoryScore(
@@ -207,6 +213,7 @@ def summarize(items: Sequence[EvalItem], results: Sequence[ItemResult]) -> EvalS
         truncated=sum(r.truncated for r in results),
         secret_ok_items=len(secret_pairs),
         leaks=leaks,
+        echoed=echoed,
         latency_n=len(latencies),
         latency_p50_ms=nearest_rank(latencies, 50) if latencies else None,
         latency_p90_ms=nearest_rank(latencies, 90) if latencies else None,

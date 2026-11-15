@@ -15,10 +15,11 @@ from pydantic import TypeAdapter
 
 from error_classifier.api.app import create_app
 from error_classifier.config import Settings
+from error_classifier.evaluation.metrics import DEFAULT_MODEL
 
 # Read at import, before the autouse clean_env fixture runs.
 LLM_URL = os.environ.get("LLM_URL", "http://127.0.0.1:8080/v1")
-MODEL_ALIAS = os.environ.get("MODEL_ALIAS", "qwen3.5-2b-q4km")
+MODEL_ALIAS = os.environ.get("MODEL_ALIAS", DEFAULT_MODEL)
 DISABLE_THINKING = TypeAdapter(bool).validate_python(os.environ.get("LLM_DISABLE_THINKING", "true"))
 
 pytestmark = [pytest.mark.live, pytest.mark.anyio]

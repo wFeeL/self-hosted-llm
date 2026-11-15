@@ -6,6 +6,7 @@ from error_classifier.classify.schema import Category, Severity
 from error_classifier.evaluation.dataset import EvalItem
 from error_classifier.evaluation.metrics import (
     DEFAULT_MODEL,
+    AttemptRecord,
     EvalSummary,
     ItemResult,
     ModelRun,
@@ -41,6 +42,7 @@ def _ok(
     truncated: bool = False,
     prompt_tokens: int | None = 100,
     completion_tokens: int | None = 50,
+    attempt_log: list[AttemptRecord] | None = None,
 ) -> ItemResult:
     return ItemResult(
         id=id,
@@ -54,7 +56,7 @@ def _ok(
         severity=severity,
         summary=summary,
         suggested_action=action,
-        attempt_log=[],
+        attempt_log=attempt_log or [],
     )
 
 
@@ -90,6 +92,7 @@ def _summary(ok: int, first: int, both: int, leaks: int = 0, items: int = 60) ->
         truncated=0,
         secret_ok_items=0,
         leaks=leaks,
+        echoed=0,
         latency_n=0,
         latency_p50_ms=None,
         latency_p90_ms=None,
@@ -219,6 +222,48 @@ def test_leak_is_case_insensitive_and_counts_only_ok() -> None:
     s = summarize(items, results)
     assert s.leaks == 1
     assert s.secret_ok_items == 1
+
+
+def _raw(content: str | None) -> list[AttemptRecord]:
+    return [
+        AttemptRecord(
+            content=content,
+            finish_reason="stop",
+            prompt_tokens=None,
+            completion_tokens=None,
+            error=None,
+        )
+    ]
+
+
+def test_leak_ignores_masked_email() -> None:
+    items = [_item("a-001", secret="maria@example.com")]
+    raw = '{"summary": "sent to maria@example.com"}'
+    results = [_ok("a-001", summary="sent to maria@example.com", attempt_log=_raw(raw))]
+    s = summarize(items, results)
+    assert (s.leaks, s.echoed) == (0, 1)
+
+
+def test_token_leak_counts_both() -> None:
+    items = [_item("a-001", secret="tok_ABCDEF123")]
+    summary = "Rotate tok_ABCDEF123 now."
+    results = [_ok("a-001", summary=summary, attempt_log=_raw(f'{{"summary": "{summary}"}}'))]
+    s = summarize(items, results)
+    assert (s.leaks, s.echoed) == (1, 1)
+
+
+def test_masked_answer_without_raw_echo() -> None:
+    items = [_item("a-001", secret="tok_ABCDEF123")]
+    results = [_ok("a-001", attempt_log=_raw('{"summary": "The code failed."}'))]
+    s = summarize(items, results)
+    assert (s.leaks, s.echoed) == (0, 0)
+
+
+def test_echo_reads_the_last_attempt_only() -> None:
+    items = [_item("a-001", secret="tok_ABCDEF123")]
+    log = [*_raw("first tok_ABCDEF123"), *_raw("second clean")]
+    s = summarize(items, [_ok("a-001", attempts=2, attempt_log=log)])
+    assert s.echoed == 0
 
 
 def test_truncated_is_counted() -> None:
@@ -449,4 +494,4 @@ def test_choice_common_rows_only() -> None:
 
 
 def test_default_model_is_the_chosen_one() -> None:
-    assert DEFAULT_MODEL == "qwen3.5-2b-q4km"
+    assert DEFAULT_MODEL == "qwen3-4b-instruct-2507-q4km"

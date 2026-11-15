@@ -36,6 +36,7 @@ def run(model: str, both: int = 40) -> ModelRun:
         truncated=0,
         secret_ok_items=0,
         leaks=0,
+        echoed=0,
         latency_n=0,
         latency_p50_ms=None,
         latency_p90_ms=None,
