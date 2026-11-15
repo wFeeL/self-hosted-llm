@@ -329,12 +329,43 @@ async def test_negative_counter_stops_the_run(stack: Stack) -> None:
 
 
 async def test_time_limit_stops_before_the_next_phase(stack: Stack) -> None:
-    stack.latency_s = 1.0
-    result = await stack.run(make_plan(max_s=10))
+    stack.latency_s = 0.45
+    result = await stack.run(make_plan(max_s=10.3))
 
     assert result.stop_reason == "time_limit"
     assert not result.complete
     assert by_phase(result) == {"warmup": 3, "series": 20}
+
+
+async def test_time_limit_stops_inside_the_series(stack: Stack) -> None:
+    stack.latency_s = 1.0
+    result = await stack.run(make_plan(max_s=5))
+
+    assert result.stop_reason == "time_limit"
+    assert not result.complete
+    assert by_phase(result) == {"warmup": 3, "series": 2}
+    assert [(r.phase, r.edge) for r in result.readings] == [("series", "start"), ("series", "end")]
+
+
+async def test_time_limit_stops_inside_the_sequential_phase(stack: Stack) -> None:
+    result = await stack.run(make_plan(max_s=4.5))
+
+    assert result.stop_reason == "time_limit"
+    counts = by_phase(result)
+    assert counts["series"] == 20
+    assert 0 < counts["sequential"] < 50
+    assert "parallel" not in counts
+    assert ("sequential", "end") in {(r.phase, r.edge) for r in result.readings}
+
+
+async def test_time_limit_stops_both_clients_of_the_parallel_phase(stack: Stack) -> None:
+    result = await stack.run(make_plan(skip_sequential=True, max_s=2.7))
+
+    assert result.stop_reason == "time_limit"
+    counts = by_phase(result)
+    assert 0 < counts["parallel"] < 20
+    assert "queue" not in counts
+    assert ("parallel", "end") in {(r.phase, r.edge) for r in result.readings}
 
 
 async def test_time_limit_does_not_cut_the_warmup(stack: Stack) -> None:

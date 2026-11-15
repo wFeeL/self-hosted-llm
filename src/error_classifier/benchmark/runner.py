@@ -39,6 +39,7 @@ CLIENTS: Final = 2
 EXTRA_TIMEOUT_S: Final = 30.0
 
 _MEASURED: Final[frozenset[Phase]] = frozenset({"series", "long", "sequential"})
+_TIMED: Final[frozenset[Phase]] = frozenset({"series", "sequential"})
 _PROMPT: Final = "llamacpp:prompt_tokens_total"
 _CACHED: Final = "llamacpp:prompt_tokens_cached_total"
 _PREDICTED: Final = "llamacpp:tokens_predicted_total"
@@ -207,6 +208,7 @@ class _Bench:
         clock: Callable[[], float],
         sleep: Callable[[float], Awaitable[None]],
         on_record: Callable[[RequestRecord], None] | None,
+        max_s: float,
     ) -> None:
         self.target = target
         self.run = run
@@ -220,6 +222,8 @@ class _Bench:
         self.readings: list[Reading] = []
         self.model: str | None = None
         self.negative = False
+        self.max_s = max_s
+        self.out_of_time = False
 
     async def get_ok(self, url: str) -> bool:
         try:
@@ -261,6 +265,11 @@ class _Bench:
                 cgroups=[self.cgroup("llm"), self.cgroup("api")],
             )
         )
+
+    def time_is_up(self) -> bool:
+        if self.clock() - self.start >= self.max_s:
+            self.out_of_time = True
+        return self.out_of_time
 
     def add(self, record: RequestRecord) -> None:
         self.records.append(record)
@@ -412,7 +421,7 @@ async def run_bench(
     on_record: Callable[[RequestRecord], None] | None = None,
     on_phase: Callable[[Phase], None] | None = None,
 ) -> RunResult:
-    bench = _Bench(target, run, http, clock, sleep, on_record)
+    bench = _Bench(target, run, http, clock, sleep, on_record, plan.max_s)
     cold: ColdStart | None = None
     llm_env: dict[str, str] = {}
     if plan.cold_start:
@@ -453,7 +462,7 @@ async def run_bench(
     stop: str | None = None
     for phase, body in phases:
         measured = phase != "warmup"
-        if measured and clock() - bench.start >= plan.max_s:
+        if measured and bench.time_is_up():
             stop = "time_limit"
             break
         if on_phase is not None:
@@ -463,7 +472,7 @@ async def run_bench(
         await body()
         if measured:
             await bench.take_reading(phase, "end")
-        stop = _stop_after_phase(bench, restarts0)
+        stop = _stop_after_phase(bench, restarts0) or ("time_limit" if bench.out_of_time else None)
         if stop is not None:
             break
     return RunResult(
@@ -482,12 +491,16 @@ def _stop_after_phase(bench: _Bench, restarts0: int | None) -> str | None:
 
 async def _one_by_one(bench: _Bench, phase: Phase, rows: Sequence[tuple[str, str]]) -> None:
     for index, (item_id, text) in enumerate(rows):
+        if phase in _TIMED and bench.time_is_up():
+            return
         await bench.request(phase, index, 0, item_id, text)
 
 
 async def _parallel(bench: _Bench, inputs: Sequence[tuple[str, str]]) -> None:
     async def client(k: int) -> None:
         for index in range(k, len(inputs), CLIENTS):
+            if bench.time_is_up():
+                return
             item_id, text = inputs[index]
             await bench.request("parallel", index, k, item_id, text)
 
