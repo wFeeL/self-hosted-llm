@@ -220,6 +220,7 @@ Every error has the shape `{"error": {"code": "...", "message": "...", "type": "
 | llm_timeout | 504 | The model did not finish within `REQUEST_TIMEOUT_S`, or the deadline left no time for a retry after an invalid answer |
 | llm_unavailable | 503 | The runtime is unreachable, still loading the model, or failing |
 | queue_full | 429 | All model slots are busy and the queue is full, or no slot became free within `QUEUE_TIMEOUT_S`; the answer carries `Retry-After` |
+| model_not_found | 404 | The `model` field or the `/v1/models/{model}` path names a model other than the served one |
 | not_found | 404 | The path does not exist |
 | method_not_allowed | 405 | The path exists but not for this HTTP method; the answer carries `Allow` |
 | internal_error | 500 | An unexpected error in the service |

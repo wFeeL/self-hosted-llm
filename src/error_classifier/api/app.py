@@ -7,6 +7,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
+from error_classifier.api.openai import router as openai_router
 from error_classifier.api.routes import describe_invalid, router
 from error_classifier.classify.service import Classifier, ClassifierOptions
 from error_classifier.concurrency import ConcurrencyLimiter
@@ -72,6 +73,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app = FastAPI(lifespan=lifespan)
     app.state.settings = settings
     app.include_router(router)
+    app.include_router(openai_router)
     app.add_exception_handler(ServiceError, _service_error_handler)
     app.add_exception_handler(StarletteHTTPException, _http_error_handler)
     app.add_exception_handler(RequestValidationError, _validation_error_handler)

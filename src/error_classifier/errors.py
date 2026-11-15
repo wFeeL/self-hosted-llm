@@ -27,6 +27,11 @@ class InvalidInputError(ServiceError):
     status_code = 400
 
 
+class ModelNotFoundError(ServiceError):
+    code = "model_not_found"
+    status_code = 404
+
+
 class ModelOutputInvalidError(ServiceError):
     code = "model_output_invalid"
     status_code = 502
