@@ -121,7 +121,6 @@ MODEL_ALIAS=qwen3.5-2b-q4km
 LLAMA_ARG_HF_REPO=bartowski/Qwen_Qwen3.5-2B-GGUF
 LLAMA_ARG_HF_FILE=Qwen_Qwen3.5-2B-Q4_K_M.gguf
 LLM_DISABLE_THINKING=true
-LLM_MEM_LIMIT=6g
 ```
 <!-- model-env:qwen3.5-2b-q4km:end -->
 
@@ -135,7 +134,6 @@ MODEL_ALIAS=qwen3-4b-instruct-2507-q4km
 LLAMA_ARG_HF_REPO=bartowski/Qwen_Qwen3-4B-Instruct-2507-GGUF
 LLAMA_ARG_HF_FILE=Qwen_Qwen3-4B-Instruct-2507-Q4_K_M.gguf
 LLM_DISABLE_THINKING=false
-LLM_MEM_LIMIT=6656m
 ```
 <!-- model-env:qwen3-4b-instruct-2507-q4km:end -->
 
@@ -149,7 +147,6 @@ MODEL_ALIAS=granite-4.1-3b-q4km
 LLAMA_ARG_HF_REPO=ibm-granite/granite-4.1-3b-GGUF
 LLAMA_ARG_HF_FILE=granite-4.1-3b-Q4_K_M.gguf
 LLM_DISABLE_THINKING=false
-LLM_MEM_LIMIT=6g
 ```
 <!-- model-env:granite-4.1-3b-q4km:end -->
 
@@ -163,7 +160,6 @@ MODEL_ALIAS=granite-4.0-1b-q4km
 LLAMA_ARG_HF_REPO=ibm-granite/granite-4.0-1b-GGUF
 LLAMA_ARG_HF_FILE=granite-4.0-1b-Q4_K_M.gguf
 LLM_DISABLE_THINKING=false
-LLM_MEM_LIMIT=6g
 # Memory not measured
 ```
 <!-- model-env:granite-4.0-1b-q4km:end -->
