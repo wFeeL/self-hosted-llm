@@ -388,6 +388,14 @@ async def test_tokens_stay_none_when_runtime_gives_none() -> None:
     assert (stats.prompt_tokens, stats.completion_tokens) == (None, None)
 
 
+async def test_debug_log_has_no_answer_text(caplog: pytest.LogCaptureFixture) -> None:
+    caplog.set_level(logging.DEBUG)
+    fake = FakeChat(_ok("SECRET-MARK-1 not json"), _ok())
+    await _classifier(fake).classify("boom", ClassifyStats())
+    assert "SECRET-MARK-1" not in caplog.text
+    assert "attempt 1 invalid" in caplog.text
+
+
 @pytest.mark.parametrize("fail", [False, True], ids=["success", "invalid-twice"])
 async def test_service_logs_nothing_at_info(caplog: pytest.LogCaptureFixture, fail: bool) -> None:
     caplog.set_level(logging.DEBUG, logger="error_classifier")

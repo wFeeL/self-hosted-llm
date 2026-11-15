@@ -177,7 +177,9 @@ class Classifier:
                 result = ClassificationResult.model_validate_json(content)
             except ValidationError as exc:
                 reasons = _reasons(exc)
-                logger.debug("attempt %d invalid: %s; content=%r", stats.attempts, reasons, content)
+                logger.debug(
+                    "attempt %d invalid: %s; %d characters", stats.attempts, reasons, len(content)
+                )
                 messages = [
                     *base,
                     {"role": "assistant", "content": content},
