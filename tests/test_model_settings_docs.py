@@ -21,12 +21,13 @@ REQUIRED = (
     "LLAMA_ARG_HF_REPO",
     "LLAMA_ARG_HF_FILE",
     "LLM_DISABLE_THINKING",
-    "LLM_MEM_LIMIT",
 )
 NOT_MEASURED = "# Memory not measured"
 RECOMMENDED = re.compile(r"^Recommended: \x60([^\x60]+)\x60$", re.MULTILINE)
 LIMIT = re.compile(r"^(\d+)([gm])$")
 LONG_INPUT_MARGIN = 1.3
+# The peak was taken under the limit it is compared with, so it understates the need.
+MEMORY_MARGIN = 1.1
 
 
 def _between(text: str, start: str, end: str) -> str:
@@ -74,17 +75,18 @@ def test_block_matches_the_evaluation_run(alias: str) -> None:
 
 
 @pytest.mark.parametrize("alias", sorted(RESULTS))
-def test_memory_limit_matches_the_measured_run(alias: str) -> None:
-    pairs = _pairs(alias)
-    limit = _limit_bytes(pairs["LLM_MEM_LIMIT"])
-    bench = BENCHES.get(alias)
-    if bench is None:
-        assert NOT_MEASURED in _block(alias)
-        return
-    assert NOT_MEASURED not in _block(alias)
-    need = llm_need_bytes(bench)
+def test_blocks_leave_memory_to_the_server_table(alias: str) -> None:
+    block = _block(alias)
+    assert "LLM_MEM_LIMIT" not in _pairs(alias)
+    assert "LLM_MEM_LIMIT" not in block
+    assert (NOT_MEASURED in block) == (alias not in BENCHES)
+
+
+def test_env_example_memory_limit_fits_the_default_model() -> None:
+    env = env_example()
+    need = llm_need_bytes(BENCHES[env["MODEL_ALIAS"]])
     assert need is not None
-    assert limit >= need
+    assert _limit_bytes(env["LLM_MEM_LIMIT"]) >= MEMORY_MARGIN * need
 
 
 @pytest.mark.parametrize("alias", sorted(BENCHES))

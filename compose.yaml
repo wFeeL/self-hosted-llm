@@ -20,6 +20,7 @@ services:
       LLAMA_ARG_N_PARALLEL: ${LLAMA_ARG_N_PARALLEL:-2}
       LLAMA_ARG_THREADS: ${LLAMA_ARG_THREADS:-6}
       LLAMA_ARG_BATCH: ${LLAMA_ARG_BATCH:-512}
+      LLAMA_ARG_CACHE_RAM: ${LLAMA_ARG_CACHE_RAM:-0}
       LLAMA_ARG_MMPROJ_AUTO: ${LLAMA_ARG_MMPROJ_AUTO:-off}
       LLAMA_ARG_ENDPOINT_METRICS: ${LLAMA_ARG_ENDPOINT_METRICS:-1}
       LLAMA_ARG_OFFLINE: ${LLAMA_ARG_OFFLINE:-0}
@@ -32,8 +33,8 @@ services:
       retries: 3
       start_period: ${LLM_START_PERIOD:-1800s}
     cpus: ${LLM_CPUS:-6}
-    mem_limit: ${LLM_MEM_LIMIT:-6g}
-    memswap_limit: ${LLM_MEM_LIMIT:-6g}
+    mem_limit: ${LLM_MEM_LIMIT:-6656m}
+    memswap_limit: ${LLM_MEM_LIMIT:-6656m}
     security_opt: ["no-new-privileges:true"]
     cap_drop: [ALL]
     restart: unless-stopped
