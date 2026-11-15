@@ -149,9 +149,10 @@ Package `error_classifier`. `Status` shows what exists now.
 | `concurrency.py` | Semaphore with a bounded queue that waits at most `QUEUE_TIMEOUT_S` | present |
 | `api/disconnect.py` | Waits for `http.disconnect` next to the work and cancels the work when the client goes away | present |
 | `api/app.py`, `api/routes.py` | FastAPI app, error handlers, `/classify`, `/health`, `/ready` | present |
-| `evaluation/` | Evaluation set loading and checks, metrics and the model choice rule, the run through Classifier, result files and the report | present |
+| `evaluation/` | Evaluation set loading and checks, metrics and the model choice rule, the run through Classifier, result files, the report and the wait for a quiet machine (`evaluation/load.py`) | present |
 | `scripts/evaluate.py` | Command line of the evaluation: run and report | present |
-| `scripts/bench.py` | Benchmark protocol: cold start, series, memory, CPU | planned |
+| `benchmark/` | Benchmark protocol through `POST /classify`: `/metrics` and cgroup readings, aggregates, the run (cold start, series, sequential, two clients, queue probe), JSONL files and the report tables | present |
+| `scripts/bench.py` | Command line of the benchmark: run and report | present |
 | `eval/dataset.jsonl`, `eval/results/` | Labelled evaluation set and raw results of the runs | present |
 | `docs/architecture.md` | Decisions (this file) | present |
 | `docs/evaluation.md` | Evaluation results generated from `eval/results/` | present |

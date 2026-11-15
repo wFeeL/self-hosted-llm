@@ -24,15 +24,11 @@ from error_classifier.evaluation.dataset import (
     few_shot_texts,
     load_dataset,
 )
-from error_classifier.evaluation.metrics import LOAD_LIMIT, ItemResult, summarize
+from error_classifier.evaluation.load import LoadAvg, wait_for_load
+from error_classifier.evaluation.metrics import ItemResult, summarize
 from error_classifier.evaluation.results import ResultDoc, RunMeta, RunSettings
 from error_classifier.evaluation.runner import run_eval
 from error_classifier.llm.client import LlmClient, build_http_client
-
-LOAD_WAIT_MAX_S = 600
-LOAD_WAIT_STEP_S = 15
-
-type LoadAvg = Callable[[], tuple[float, float, float]]
 
 
 def _err(text: str) -> None:
@@ -86,17 +82,6 @@ async def _props(http: httpx.AsyncClient, settings: Settings) -> dict[str, objec
     return cast(dict[str, object], body)
 
 
-def _wait_for_load(sleep: Callable[[float], None], loadavg: LoadAvg) -> tuple[float, float, float]:
-    current = loadavg()
-    waited = 0
-    while current[0] >= LOAD_LIMIT and waited < LOAD_WAIT_MAX_S:
-        _err("waiting for load ...")
-        sleep(LOAD_WAIT_STEP_S)
-        waited += LOAD_WAIT_STEP_S
-        current = loadavg()
-    return current
-
-
 def _progress(r: ItemResult) -> None:
     _err(f"{r.id} {r.outcome} attempts={r.attempts} {r.latency_ms / 1000:.1f}s")
 
@@ -121,7 +106,7 @@ async def _run_async(
         if env is None:
             _err(f"warning: cannot read the env of container {args.container}")
             env = {}
-        before = _wait_for_load(sleep, loadavg)
+        before = wait_for_load(sleep, loadavg)
         started_at = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
         git_sha, git_dirty = results.git_state(Path.cwd())
         try:

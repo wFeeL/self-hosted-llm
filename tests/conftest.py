@@ -1,8 +1,10 @@
-from collections.abc import AsyncGenerator, Callable
+from collections.abc import AsyncGenerator, Callable, Iterator
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
 
 import httpx
 import pytest
+import respx
+from bench_fakes import Stack
 from fastapi import FastAPI
 
 Serve = Callable[[FastAPI], AbstractAsyncContextManager[httpx.AsyncClient]]
@@ -50,3 +52,9 @@ def serve() -> Serve:
             yield client
 
     return _serve
+
+
+@pytest.fixture
+def stack() -> Iterator[Stack]:
+    with respx.mock(assert_all_called=False) as router:
+        yield Stack(router)
