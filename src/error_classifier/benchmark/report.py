@@ -143,6 +143,13 @@ def _total(*parts: int | None) -> int | None:
     return None if any(p is None for p in parts) else sum(cast("list[int]", parts))
 
 
+def llm_need_bytes(bench: BenchFile) -> int | None:
+    summary = bench.summary
+    conservative = _total(summary.aggregates.llm_anon_max, summary.config.model_file_size)
+    peak = summary.memory.llm_peak
+    return None if conservative is None or peak is None else max(conservative, peak)
+
+
 def _same(files: Sequence[BenchFile], what: str, key: Callable[[BenchConfig], object]) -> None:
     if len({json.dumps(key(f.summary.config), sort_keys=True) for f in files}) != 1:
         raise ValueError(f"the results come from different {what}")
@@ -285,8 +292,7 @@ def render_bench_report(files: Sequence[BenchFile]) -> str:
                 _gib(c.api_image_size),
             ]
         )
-        conservative = _total(a.llm_anon_max, c.model_file_size)
-        need = None if conservative is None or m.llm_peak is None else max(conservative, m.llm_peak)
+        need = llm_need_bytes(f)
         need_rows.append(
             [
                 c.model,
