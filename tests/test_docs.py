@@ -58,6 +58,20 @@ def test_setting_is_documented(name: str) -> None:
     assert f"| {name} |" in README
 
 
+def test_compose_variables_match_env_example_and_readme() -> None:
+    compose_text = (ROOT / "compose.yaml").read_text(encoding="utf-8")
+    env_text = (ROOT / ".env.example").read_text(encoding="utf-8")
+    compose_vars = set(re.findall(r"\$\{([A-Z_][A-Z0-9_]*)", compose_text))
+    env_keys = set(re.findall(r"^([A-Z_][A-Z0-9_]*)=", env_text, re.M))
+    assert compose_vars
+    assert compose_vars == env_keys, (
+        f"compose only: {sorted(compose_vars - env_keys)}, "
+        f".env.example only: {sorted(env_keys - compose_vars)}"
+    )
+    undocumented = sorted(name for name in compose_vars if f"| {name} |" not in README)
+    assert not undocumented, f"missing from the README table: {undocumented}"
+
+
 def test_no_internal_network_claim() -> None:
     assert "internal network" not in README
 

@@ -13,7 +13,7 @@ until curl -fsS http://127.0.0.1:8000/ready; do sleep 5; done
 - The first start downloads about 1.4 GB of model weights into the `models` volume; watch it with `docker compose logs -f llm`.
 - If the loop keeps waiting, check `docker compose ps` and `docker compose logs llm`; an unhealthy `llm` keeps `api` from starting.
 - Every `docker compose` command needs `.env` to be present.
-- If the network is slow and `llm` becomes unhealthy before the download ends, run `docker compose up -d` again after the download, or raise `LLM_START_PERIOD` in `.env`.
+- If the network is slow and `llm` becomes unhealthy before the download ends, run `docker compose up -d` again after the download, or raise `LLM_START_PERIOD` in `.env` (1800 s by default).
 - `/ready` answers 503 until the runtime has loaded the model, `/health` always answers 200.
 - The API listens on `127.0.0.1` by default. With `API_KEY` set in `.env`, `/classify` and `/v1/*` require `Authorization: Bearer <key>`; `/health` and `/ready` stay open for the healthchecks. On a VPS keep `API_BIND` as is, set the key and use a reverse proxy.
 - The stack has been checked with `podman compose`, not with Docker yet.
@@ -161,6 +161,177 @@ LLM_MEM_LIMIT=6g
 The smallest file (about 1 GB) and the fastest (p50 3.9 s), with the weakest category accuracy (46 of 60). It followed the injection. It was not benchmarked: its memory, long inputs and concurrency are unknown.
 
 
+## Configuration
+
+All settings live in `.env`, copied from `.env.example`; compose passes each service only its own variables. Changing a model or a limit needs no change of code, only `.env` and `docker compose up -d`.
+
+| variable | default | meaning |
+|---|---|---|
+| MODEL_ALIAS | `qwen3.5-2b-q4km` | Name of the model in llama-server and in API answers; see [Choosing a model](#choosing-a-model) |
+| LLAMA_ARG_HF_REPO | `bartowski/Qwen_Qwen3.5-2B-GGUF` | Hugging Face repository of the GGUF file |
+| LLAMA_ARG_HF_FILE | `Qwen_Qwen3.5-2B-Q4_K_M.gguf` | GGUF file in that repository, downloaded on the first start |
+| LLAMA_ARG_CTX_SIZE | 8192 | Context of llama-server, split between the slots; keep it at least `LLAMA_ARG_N_PARALLEL` × 4096 |
+| LLAMA_ARG_N_PARALLEL | 2 | Slots of llama-server, and the number of requests the API classifies at once |
+| LLAMA_ARG_THREADS | 6 | CPU threads of llama-server; keep it at `LLM_CPUS` or below |
+| LLAMA_ARG_BATCH | 512 | Prompt batch; a cancelled request frees its slot only after the current batch |
+| LLAMA_ARG_MMPROJ_AUTO | off | Keeps llama-server from downloading a vision projector the service does not use |
+| LLAMA_ARG_ENDPOINT_METRICS | 1 | Enables `/metrics` of llama-server, used by the benchmark |
+| LLAMA_ARG_OFFLINE | 0 | `1` loads the model only from the volume; set it after the first start and back to `0` to change the model |
+| LLM_CPUS | 6 | CPU limit of the `llm` container |
+| LLM_MEM_LIMIT | 6g | Memory limit of the `llm` container (swap is not added); see the benchmark tables before lowering it |
+| API_CPUS | 1 | CPU limit of the `api` container |
+| API_MEM_LIMIT | 512m | Memory limit of the `api` container |
+| LLM_START_PERIOD | 1800s | How long the `llm` healthcheck tolerates failures while the model downloads and loads; the service is healthy at the first successful check, so a long window costs nothing |
+| API_BIND | 127.0.0.1 | Address the API port is published on; keep it local and put a reverse proxy in front |
+| API_PORT | 8000 | Published API port |
+| LLM_PROBE_TIMEOUT_S | 2.0 | Timeout of the readiness probe from the API to llama-server |
+| LOG_LEVEL | INFO | Log level of the API; error texts are never logged in full |
+| MAX_CONCURRENCY | `LLAMA_ARG_N_PARALLEL` | Requests classified at the same time; compose sets it from `LLAMA_ARG_N_PARALLEL`, so it is not in `.env` |
+| MAX_QUEUE | 4 | Requests allowed to wait for a free slot, 0 to 1000; one more gets 429 `queue_full` at once |
+| QUEUE_TIMEOUT_S | 30 | Longest wait for a slot in seconds, above 0 up to 600; then 429 `queue_full`, and `Retry-After` is this value rounded up |
+| REQUEST_TIMEOUT_S | 120 | Seconds for the whole classification, both attempts, counted from getting a slot |
+| MAX_INPUT_CHARS | 3000 | Longest error text sent to the model, 200 to 4000; longer text is truncated |
+| MAX_REQUEST_BYTES | 262144 | Largest request body, not less than 12 times `MAX_INPUT_CHARS` plus 64 |
+| MAX_OUTPUT_TOKENS | 256 | Token limit of the model answer, 16 to 2048 |
+| LLM_TEMPERATURE | 0.0 | Sampling temperature, 0 to 2 |
+| LLM_DISABLE_THINKING | false | Sends `chat_template_kwargs` with `enable_thinking: false` for models that think |
+| API_KEY | empty | Access key: when set, `/classify` and `/v1/*` need `Authorization: Bearer <API_KEY>` and answer 401 `unauthorized` otherwise; letters, digits and `. _ ~ + / = -` only (use `openssl rand -hex 32`); `/health` and `/ready` stay open |
+| HF_TOKEN | not set | Only for gated models, passed to `llm` with a `compose.override.yaml` (see [Deploying on a clean VPS](#deploying-on-a-clean-vps)) |
+
+## Deploying on a clean VPS
+
+These steps target Ubuntu 24.04 LTS on a server without a GPU. They use Docker Engine with the Compose plugin; nothing in the code changes between machines, only `.env`. The steps were written against the stack that runs on podman here and were not yet run on a clean VPS.
+
+### 1. Pick the server
+
+Use the table in [Choosing a model](#choosing-a-model): the default model needs a server with 4 GiB of RAM and 2.3 GiB of disk for the images and the model file, plus room for every other model you download. All measurements were taken on 8 vCPU; with fewer cores the answers are slower, and the sizing table below gives settings for 2 and 4 vCPU.
+
+The server needs outbound HTTPS to the Docker package repository and Docker Hub (Docker itself and the `python` base image of `api`), `ghcr.io` (the llama.cpp image), PyPI (dependencies while `api` is built) and `huggingface.co` (the first download of the model). Check before you start:
+
+```sh
+curl -sSI https://huggingface.co | head -1
+curl -sSI https://ghcr.io | head -1
+```
+
+### 2. Install Docker Engine
+
+Install Docker Engine and the Compose plugin from Docker's own apt repository as described in [Install Docker Engine on Ubuntu](https://docs.docker.com/engine/install/ubuntu/) (checked 2026-11-15), not the `docker.io` package of Ubuntu. Then enable the service so it starts on boot:
+
+```sh
+sudo systemctl enable --now docker
+docker compose version
+```
+
+Adding your user to the `docker` group lets it run `docker` without `sudo`, which is the same as root access on that machine ([post-installation steps](https://docs.docker.com/engine/install/linux-postinstall/)).
+
+### 3. Get the code and the configuration
+
+```sh
+git clone https://github.com/wFeeL/self-hosted-llm.git llm-error-classifier
+cd llm-error-classifier
+cp .env.example .env
+chmod 600 .env
+```
+
+Size `.env` before the first start:
+
+| Server | `LLM_CPUS` | `LLAMA_ARG_THREADS` | `API_CPUS` | `LLAMA_ARG_N_PARALLEL` | `LLAMA_ARG_CTX_SIZE` | `REQUEST_TIMEOUT_S` |
+|---|---|---|---|---|---|---|
+| 8 vCPU (as measured) | 6 | 6 | 1 | 2 | 8192 | 120 |
+| 4 vCPU | 3 | 3 | 1 | 1 | 4096 | 180 |
+| 2 vCPU | 2 | 2 | 0.5 | 1 | 4096 | 300 |
+
+- Keep `LLAMA_ARG_CTX_SIZE` at least `LLAMA_ARG_N_PARALLEL` × 4096: the context is split between slots, and a 3000-character input needs about 4096 tokens of a slot.
+- Keep `LLM_MEM_LIMIT` below the RAM of the server minus 1.5 GB and above the `llm need` of your model in the benchmark tables.
+- The timeouts for 4 and 2 vCPU are estimates from the 8 vCPU measurements; speed on smaller servers was not measured.
+- Set an API key, because the service will be reachable from the network: `API_KEY=$(openssl rand -hex 32)` in `.env`. Clients send it as `Authorization: Bearer <key>`.
+
+### 4. First start
+
+```sh
+docker compose up -d --build
+until curl -fsS http://127.0.0.1:8000/ready; do sleep 10; done
+```
+
+The first start downloads the model into the `models` volume. On a slow network run the wait loop in `tmux` or `screen`; if `llm` became unhealthy before the download finished, run `docker compose up -d` again. Then classify the example from the task:
+
+```sh
+curl -sS -X POST http://127.0.0.1:8000/classify \
+  -H "Authorization: Bearer $API_KEY" -H 'content-type: application/json' \
+  -d '{"message": "TypeError: Cannot read properties of undefined (reading '"'"'map'"'"')"}'
+```
+
+After the first successful start set `LLAMA_ARG_OFFLINE=1` in `.env` and run `docker compose up -d`: the model then loads only from the volume, and a changed file on Hugging Face cannot replace it. Set it back to `0` while you change the model.
+
+### 5. Start after a reboot
+
+Both services have `restart: unless-stopped`, and the Docker service starts on boot, so the stack comes back by itself. `api` waits until `llm` is healthy; after a reboot wait for `/ready` the same way as after the first start. To check, reboot and run:
+
+```sh
+until curl -fsS http://127.0.0.1:8000/ready; do sleep 10; done
+docker compose ps
+docker inspect -f '{{.Name}} restarts={{.RestartCount}}' $(docker compose ps -q)
+```
+
+`docker compose stop` keeps the containers but they stay stopped after a reboot until `docker compose up -d`; `docker compose down` removes them (the `models` volume stays). A `llm` process that hangs without exiting is not restarted automatically: `docker compose restart llm`.
+
+### 6. Access from outside
+
+Keep `API_BIND=127.0.0.1` and put a reverse proxy with TLS on the host. Ports published by Docker bypass ufw rules ([Docker and ufw](https://docs.docker.com/engine/network/packet-filtering-firewalls/#docker-and-ufw)), so publishing `api` on `0.0.0.0` would expose it even with ufw on. With [Caddy](https://caddyserver.com/docs/caddyfile/directives/reverse_proxy) the Caddyfile is:
+
+```
+classifier.example.com {
+	reverse_proxy 127.0.0.1:8000 {
+		transport http {
+			read_timeout 180s
+			write_timeout 180s
+		}
+	}
+}
+```
+
+The proxy timeouts must be longer than `QUEUE_TIMEOUT_S + REQUEST_TIMEOUT_S` (150 s by default). Before enabling ufw allow SSH, then HTTP and HTTPS:
+
+```sh
+sudo ufw allow OpenSSH
+sudo ufw allow 80,443/tcp
+sudo ufw enable
+```
+
+### 7. Change the model
+
+```sh
+cp .env .env.bak
+# edit MODEL_ALIAS, LLAMA_ARG_HF_REPO, LLAMA_ARG_HF_FILE, LLM_DISABLE_THINKING, LLAMA_ARG_OFFLINE=0
+docker compose up -d
+until curl -fsS http://127.0.0.1:8000/ready; do sleep 10; done
+```
+
+To roll back, restore `.env.bak` and run `docker compose up -d`. Old model files stay in the volume; check its size with `docker system df -v` and remove a model by deleting its directory inside the volume (`docker compose exec llm ls /models`) or drop the whole volume with `docker compose down -v` and let the next start download again. For a gated model put `HF_TOKEN` in `.env` and pass it to `llm` with a `compose.override.yaml`:
+
+```yaml
+services:
+  llm:
+    environment:
+      HF_TOKEN: ${HF_TOKEN}
+```
+
+### 8. Update
+
+Code: `git pull` and `docker compose up -d --build`. The llama.cpp image is pinned by digest in `compose.yaml` and the `python` base image in `Dockerfile`; to update them, pull the new image, read its digest with `docker image inspect --format '{{index .RepoDigests 0}}' <image>` and edit the file.
+
+### 9. Logs and common failures
+
+`docker compose logs -f llm` and `docker compose logs -f api`; both are rotated at 3 files of 10 MB.
+
+| Answer | Meaning | What to do |
+|---|---|---|
+| 503 `llm_unavailable` | the runtime is down or still loading | wait for `/ready`, check `docker compose logs llm` |
+| 429 `queue_full` | all slots busy and the queue full | retry after `Retry-After`, or raise `MAX_QUEUE` |
+| 504 `llm_timeout` | the model did not finish in `REQUEST_TIMEOUT_S` | raise it on slow servers |
+| 400 `invalid_input` on long text | the text does not fit the context of a slot | lower `MAX_INPUT_CHARS` or raise `LLAMA_ARG_CTX_SIZE` |
+| 401 `unauthorized` | missing or wrong `API_KEY` | send `Authorization: Bearer <key>` |
+
 ## Architecture
 
 Two containers make up the stack: `api` (FastAPI) and `llm` (llama-server from llama.cpp).
@@ -243,18 +414,7 @@ Package `error_classifier`. `Status` shows what exists now.
 
 ### Settings
 
-| variable | default | meaning |
-|---|---|---|
-| MAX_CONCURRENCY | 2 | Requests classified at the same time, 1 to 64; keep it equal to `LLAMA_ARG_N_PARALLEL` |
-| MAX_QUEUE | 4 | Requests allowed to wait for a free slot, 0 to 1000; one more gets 429 `queue_full` at once |
-| QUEUE_TIMEOUT_S | 30 | Longest wait for a slot in seconds, above 0 up to 600; then 429 `queue_full`, and `Retry-After` is this value rounded up |
-| REQUEST_TIMEOUT_S | 120 | Seconds for the whole classification, both attempts, counted from getting a slot |
-| MAX_INPUT_CHARS | 3000 | Longest error text sent to the model, 200 to 4000; longer text is truncated |
-| MAX_REQUEST_BYTES | 262144 | Largest request body, not less than 12 times `MAX_INPUT_CHARS` plus 64 |
-| MAX_OUTPUT_TOKENS | 256 | Token limit of the model answer, 16 to 2048 |
-| LLM_TEMPERATURE | 0.0 | Sampling temperature, 0 to 2 |
-| API_KEY | empty | Access key: when set, `/classify` and `/v1/*` need `Authorization: Bearer <API_KEY>` and answer 401 `unauthorized` otherwise; letters, digits and `. _ ~ + / = -` only (use `openssl rand -hex 32`); `/health` and `/ready` stay open |
-| LLM_DISABLE_THINKING | false | Sends `chat_template_kwargs` with `enable_thinking: false` for models that think |
+The limits of classification (`MAX_INPUT_CHARS`, `MAX_OUTPUT_TOKENS`, `REQUEST_TIMEOUT_S` and others) are listed with every other variable in [Configuration](#configuration).
 
 ## Error codes
 
