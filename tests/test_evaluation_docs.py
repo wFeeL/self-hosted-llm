@@ -1,9 +1,10 @@
 import re
 from pathlib import Path
 
+from error_classifier.benchmark.report import read_bench
 from error_classifier.config import Settings
 from error_classifier.evaluation.dataset import DEFAULT_DATASET, load_dataset
-from error_classifier.evaluation.metrics import DEFAULT_MODEL, choose_model, summarize
+from error_classifier.evaluation.metrics import DEFAULT_MODEL, summarize
 from error_classifier.evaluation.results import (
     SAME_RUNTIME,
     ResultDoc,
@@ -13,6 +14,7 @@ from error_classifier.evaluation.results import (
     read_result,
     render_report,
 )
+from error_classifier.recommend import DEFAULT_TIER_GIB, choose_per_tier
 
 ROOT = Path(__file__).resolve().parents[1]
 RESULTS = sorted((ROOT / "eval" / "results").glob("*.json"))
@@ -41,11 +43,13 @@ def _default(field: str) -> object:
     return Settings.model_fields[field].default
 
 
-def _chosen_doc() -> ResultDoc | None:
+def _default_tier_doc() -> ResultDoc:
     docs = _docs()
     items = load_dataset(ROOT / DEFAULT_DATASET)
-    model = choose_model([model_run(doc, items) for doc in docs]).model
-    return next((doc for doc in docs if doc.meta.model == model), None)
+    benches = [read_bench(path) for path in sorted((ROOT / "bench" / "results").glob("*.jsonl"))]
+    choices = choose_per_tier([model_run(doc, items) for doc in docs], benches)
+    model = next(c.model for c in choices if c.tier_gib == DEFAULT_TIER_GIB)
+    return next(doc for doc in docs if doc.meta.model == model)
 
 
 def _env_example() -> dict[str, str]:
@@ -107,22 +111,21 @@ def test_docs_tables_match_report() -> None:
     assert between.strip() == render_report(_docs(), items).strip()
 
 
-def test_env_example_uses_the_chosen_model() -> None:
-    chosen = _chosen_doc()
-    expected = chosen.meta.model if chosen else DEFAULT_MODEL
-    assert _env_example()["MODEL_ALIAS"] == expected
+def test_env_example_model_is_the_recommendation_for_the_default_tier() -> None:
+    assert _env_example()["MODEL_ALIAS"] == _default_tier_doc().meta.model
 
 
-def test_env_example_thinking_matches_the_chosen_run() -> None:
-    chosen = _chosen_doc()
-    assert chosen is not None
+def test_env_example_thinking_matches_the_recommended_run() -> None:
     flag = _env_example()["LLM_DISABLE_THINKING"].lower() == "true"
-    assert flag == chosen.meta.settings.disable_thinking
+    assert flag == _default_tier_doc().meta.settings.disable_thinking
 
 
-def test_env_example_model_files_match_the_chosen_run() -> None:
-    chosen = _chosen_doc()
-    assert chosen is not None
+def test_env_example_model_files_match_the_recommended_run() -> None:
     env = _env_example()
+    meta = _default_tier_doc().meta
     for key in ("LLAMA_ARG_HF_REPO", "LLAMA_ARG_HF_FILE"):
-        assert env[key] == chosen.meta.runtime_env[key], key
+        assert env[key] == meta.runtime_env[key], key
+
+
+def test_default_model_is_the_env_example_model() -> None:
+    assert _env_example()["MODEL_ALIAS"] == DEFAULT_MODEL
