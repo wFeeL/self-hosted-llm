@@ -2,6 +2,16 @@
 
 A service that classifies error messages by category and severity with a small language model that runs locally on CPU. `POST /classify` takes the text of an error and returns its category, severity, a short summary and a suggested first action.
 
+## Results at a glance
+
+- Default model: Qwen3.5-2B (Q4_K_M, 1.4 GB file) on llama.cpp `llama-server`, CPU only.
+- Quality on the 60 labelled errors: category right in 52, category and severity both right in 24, no leaked secrets, the injection in the set treated as text. Qwen3-4B is more accurate (34 rows with both fields) but repeated an email address from an error text and is about 2.4 times slower.
+- Speed through the API on 8 vCPU (6 threads): p50 5.8 s and p95 10.8 s for one request, 24.6 s for a 3000-character input, 50 requests in a row without growth of memory beyond 0.1 GiB.
+- Resources: 2.34 GiB of RAM for `llm` and 0.10 GiB for `api`, 2.3 GiB of disk for the images and the model, 5.2 to 5.5 CPU cores while answering.
+- APIs: `POST /classify` and an OpenAI-compatible `/v1/chat/completions`, with a queue, timeouts, an optional API key and honest errors instead of made-up answers.
+
+The numbers come from podman on a shared machine; see [Benchmarks](#benchmarks) and [Evaluation](#evaluation) for the method and [Limitations](#limitations) for what they do not cover.
+
 ## Quick start
 
 ```
@@ -160,6 +170,19 @@ LLM_MEM_LIMIT=6g
 
 The smallest file (about 1 GB) and the fastest (p50 3.9 s), with the weakest category accuracy (46 of 60). It followed the injection. It was not benchmarked: its memory, long inputs and concurrency are unknown.
 
+
+## Model and license
+
+Qwen3.5-2B is the default because it was the only evaluated model that neither repeated a secret from the error text nor followed the injection, it is the fastest of the 2 to 4B models, and it fits a 4 GiB server. The price is accuracy: Qwen3-4B gets both fields right in 10 more of 60 rows.
+
+| Model | License | Where it is stated |
+|---|---|---|
+| Qwen3.5-2B | Apache-2.0 | `LICENSE` in [Qwen/Qwen3.5-2B](https://huggingface.co/Qwen/Qwen3.5-2B); the GGUF repository [bartowski/Qwen_Qwen3.5-2B-GGUF](https://huggingface.co/bartowski/Qwen_Qwen3.5-2B-GGUF) is marked apache-2.0 |
+| Qwen3-4B-Instruct-2507 | Apache-2.0 | `LICENSE` in [Qwen/Qwen3-4B-Instruct-2507](https://huggingface.co/Qwen/Qwen3-4B-Instruct-2507); the bartowski GGUF repository names no license and points to that base model |
+| Granite 4.1 3B, Granite 4.0 1B | Apache-2.0 | model card and repository metadata of [ibm-granite/granite-4.1-3b](https://huggingface.co/ibm-granite/granite-4.1-3b) and [ibm-granite/granite-4.0-1b](https://huggingface.co/ibm-granite/granite-4.0-1b) and their official GGUF repositories; the repositories have no `LICENSE` file |
+| llama.cpp (runtime image) | MIT | [ggml-org/llama.cpp](https://github.com/ggml-org/llama.cpp) |
+
+All weights are open and none of the repositories is gated (checked 2026-11-15). Apache-2.0 allows commercial use, changes and redistribution; whoever redistributes the weights has to keep the license and its notices. This service does not ship the weights: `llm` downloads them from Hugging Face on the first start.
 
 ## Configuration
 
@@ -349,6 +372,25 @@ Code: `git pull`, then `diff .env.example .env` to see new variables (a missing 
 | 504 `llm_timeout` | the model did not finish in `REQUEST_TIMEOUT_S` | raise it on slow servers |
 | 400 `invalid_input` on long text | the text does not fit the context of a slot | lower `MAX_INPUT_CHARS` or raise `LLAMA_ARG_CTX_SIZE` |
 | 401 `unauthorized` | missing or wrong `API_KEY` | send `Authorization: Bearer <key>` |
+
+## Limitations
+
+Of the model:
+
+- Severity is the weak field: the default model gets it exactly right in 27 of 60 rows and within one level in 56. The texts rarely say how many users are affected.
+- The category is right in 52 of 60 rows, and only 46 when the label must match strictly; `resource_error` and `permission_error` are the most confused.
+- `summary` and `suggested_action` are always English.
+- Leaks and injection were checked on 7 rows only; zero leaks there does not prove that the model never repeats a secret.
+- The evaluation set has 60 rows written and labelled by one person, so differences of a few rows between models are noise.
+
+Of the configuration:
+
+- The context of 8192 tokens is split into 2 slots, so one request has about 4096 tokens: longer error texts are cut to `MAX_INPUT_CHARS` (3000) from the beginning and the end, and the answer says `truncated: true`.
+- Two requests are classified at a time; more wait in a queue of 4 for at most 30 s and then get 429. On 8 vCPU one request takes 5 to 11 s, a long one about 25 s.
+- No streaming answers, no per-client rate limit, one model per stack; changing the model restarts `llm`.
+- The only access control is the optional `API_KEY`; TLS comes from the reverse proxy.
+
+Of the measurements: everything was measured with podman on one shared 8 vCPU machine, not on Docker and not on a clean VPS; see the limitation lists in [Evaluation](#evaluation) and [Benchmarks](#benchmarks).
 
 ## Architecture
 
@@ -661,3 +703,19 @@ Qwen3-4B needs 5.77 GiB for `llm` and Granite 4.1 3B 4.29 GiB by the same measur
 - Concurrency stops at two clients, which is the number of runtime slots.
 - Only the default model ran the 50-request series; the other two skip it to keep each run under 15 minutes.
 - The cold start begins with the model file already in the volume and probably in the page cache of the host, so loading from a cold disk takes longer. The time to `/ready` includes the healthcheck interval of `llm` (10 s): `api` starts only after `llm` is reported healthy, so this column moves in steps of the interval. The first start also downloads the file, and its time depends on the network.
+
+## About this test task
+
+This repository is a solution of the CodeX test task "Self-hosted LLM": deploy an open-weights model on a CPU and turn it into an API that classifies error messages. All requirements of the task are covered above: model choice and license, CPU-only deployment with an API, resource requirements, the classification JSON with defined categories and severity levels, handling of invalid model output, a test set with checked results, Docker Compose with persistent model storage, settings in `.env`, start after reboot, a VPS guide, and measurements in this README.
+
+Of the optional items, the OpenAI-compatible API, the comparison of several models, the automatic evaluation, the limit on concurrent requests, timeouts and model errors, and model changes without code changes are done. Prometheus metrics with Grafana and a demonstration on a clean VPS were left out on purpose; llama-server exposes `/metrics` if they are needed.
+
+Constraints of the work: the development machine was shared with another project and had no Docker. The stack was built and checked with podman, the files are written for Docker Compose, and the owner runs them on Docker before publication. Model runs stopped when they started to take most of the shared machine.
+
+TODO:
+
+- Run the stack and the VPS guide on Docker, including a reboot, and repeat the benchmarks there.
+- Run the live tests against the model, including `tests/live/test_openai_live.py` through the official client.
+- Benchmark Granite 4.0 1B and evaluate a 7 to 8B model on a machine that can take the load.
+- Repeat the rows that decided the exclusion of Granite 4.0 1B and Qwen3-4B to see whether their leaks are stable.
+- Replace the example answer in [Classify an error](#classify-an-error) with one from the default model.
