@@ -219,7 +219,9 @@ With 60 rows one row is 1.7 percentage points. A single share is uncertain by ab
 | granite-4.1-3b-q4km vs qwen3.5-2b-q4km | 16 | 15 | 1.000 |
 | qwen3-4b-instruct-2507-q4km vs qwen3.5-2b-q4km | 16 | 6 | 0.052 |
 
-Choice by rule D8: qwen3.5-2b-q4km (the only model that passed the validity and leak thresholds).
+p values are not corrected for multiple comparisons: 3 pairs; with Holm's correction the smallest p is significant only below 0.0167.
+
+Choice by the rule: qwen3.5-2b-q4km (the only model that passed the validity and leak thresholds).
 <!-- eval-table:end -->
 
 ### Reading the results

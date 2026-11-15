@@ -271,7 +271,10 @@ def choose_model(runs: Sequence[ModelRun], default_model: str = DEFAULT_MODEL) -
     ]
     if len(candidates) == 1:
         return Choice(
-            candidates[0].model, "best on both fields, the others differ beyond noise", {}
+            candidates[0].model,
+            f"best on both fields, the others are more than {MAX_GAP_ROWS} rows behind "
+            f"or McNemar p < {MCNEMAR_ALPHA}",
+            {},
         )
 
     common_ids = {row.id for row in candidates[0].rows if row.first_attempt}

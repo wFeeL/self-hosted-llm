@@ -313,7 +313,10 @@ EXPECTED_REPORT = "\n".join(
         _separator(4),
         _row("a-model vs b-model", "0", "0", "1.000"),
         "",
-        "Choice by rule D8: none (no model passed the validity and leak thresholds).",
+        "p values are not corrected for multiple comparisons: 1 pair; with Holm's correction "
+        "the smallest p is significant only below 0.0500.",
+        "",
+        "Choice by the rule: none (no model passed the validity and leak thresholds).",
         "",
     ]
 )
@@ -324,9 +327,19 @@ def test_report_exact_text() -> None:
     assert render_report(docs, ITEMS) == EXPECTED_REPORT
 
 
+def test_report_captions_the_pairs() -> None:
+    docs = [_doc("a-model", A_RESULTS), _doc("b-model", B_RESULTS), _doc("gamma", A_RESULTS)]
+    text = render_report(docs, ITEMS)
+    assert (
+        "p values are not corrected for multiple comparisons: 3 pairs; with Holm's correction "
+        "the smallest p is significant only below 0.0167.\n"
+    ) in text
+
+
 def test_report_single_document_has_no_pairs_block() -> None:
     text = render_report([_doc("a-model", A_RESULTS)], ITEMS)
     assert "Pair" not in text
+    assert "p values are not corrected" not in text
     assert text.endswith("leak thresholds).\n")
 
 

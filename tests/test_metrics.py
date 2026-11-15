@@ -358,6 +358,16 @@ def test_choice_clear_quality_gap_wins() -> None:
     assert choice.common_p50_ms == {}
 
 
+def test_step_2_reason_names_the_gap_and_the_test() -> None:
+    leader = _good("m-a", 40, 10000)
+    other = _run("m-b", set(range(10, 40)), 60, ALL, 0, 7000)
+    choice = choose_model([leader, other])
+    assert choice.model == "m-a"
+    assert choice.reason == (
+        "best on both fields, the others are more than 6 rows behind or McNemar p < 0.05"
+    )
+
+
 def test_choice_six_rows_ahead_with_small_p_is_out() -> None:
     # 6:0 gives p 0.031, so the second model is out despite the gap of exactly six rows.
     leader = _good("m-a", 36, 10000)
