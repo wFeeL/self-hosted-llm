@@ -209,7 +209,7 @@ def _run(
         compose = [engine, "compose", *(a for f in files for a in ("-f", f))]
         built = run([*compose, "build", "api"], timeout_s=SLOW_COMMAND_TIMEOUT_S)
         if built.code != 0:
-            _err("compose build api failed")
+            _err(f"compose build api failed: {built.stderr_tail.strip()}")
             return 3
     started_at = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
     git_sha, git_dirty = git_state(Path.cwd())
@@ -303,6 +303,8 @@ def _run(
     if result.complete:
         return 0
     _err(f"run stopped: {result.stop_reason}, wrote {path}")
+    if result.failure_detail:
+        _err(result.failure_detail.strip())
     return 4
 
 

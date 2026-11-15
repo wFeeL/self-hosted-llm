@@ -96,6 +96,16 @@ class Stack:
         self.health_calls = 0
         self.ready_calls = 0
         self.up_code = 0
+        self.up_stderr = ""
+        self.down_code = 0
+        self.down_stderr = ""
+        self.build_stderr = ""
+        self.unchecked = {
+            "ready",
+            "health",
+        }  # first probe of each after down is the stale-stack check
+        self.down_seen = False
+        self.alive_after_down = False  # the old stack still answers after compose down
         self.api_env: dict[str, str] | None = dict(API_ENV)
         self.llm_env: dict[str, str] | None = dict(LLM_ENV)
         self.cgroup_code = 0
@@ -113,6 +123,9 @@ class Stack:
         return httpx.Response(200, json={"category": "other", "model": "m-test"})
 
     def _ready(self, request: httpx.Request) -> httpx.Response:
+        if "ready" in self.unchecked and self.down_seen:
+            self.unchecked.discard("ready")
+            return httpx.Response(200 if self.alive_after_down else 503)
         self.ready_calls += 1
         if self.ready_error is not None:
             raise self.ready_error
@@ -120,6 +133,9 @@ class Stack:
         return httpx.Response(status, json={"status": "ready"})
 
     def _health(self, request: httpx.Request) -> httpx.Response:
+        if "health" in self.unchecked and self.down_seen:
+            self.unchecked.discard("health")
+            return httpx.Response(200 if self.alive_after_down else 503)
         self.health_calls += 1
         return httpx.Response(503 if self.health_calls <= self.health_after else 200)
 
@@ -162,8 +178,14 @@ class Stack:
         if engine_command == "compose":
             if "version" in args:
                 return CommandResult(0, "podman-compose version 1.5.0\nsecond line\n")
-            failed = self.up_code if "up" in args else self.build_code if "build" in args else 0
-            return CommandResult(failed, "")
+            if "down" in args:
+                self.down_seen = True
+                return CommandResult(self.down_code, "", self.down_stderr)
+            if "up" in args:
+                return CommandResult(self.up_code, "", self.up_stderr)
+            if "build" in args:
+                return CommandResult(self.build_code, "", self.build_stderr)
+            return CommandResult(0, "")
         if engine_command == "ps":
             return CommandResult(0, "hawkstand_a\nllm_c\nhawkstand_b\n")
         if engine_command == "image":

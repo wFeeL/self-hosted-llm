@@ -10,6 +10,7 @@ from bench_fakes import API_ENV, COMPOSE, LLM_ENV, Stack, make_plan
 from error_classifier.benchmark.records import RequestRecord
 from error_classifier.benchmark.runner import (
     BenchUnavailable,
+    ColdStart,
     CommandResult,
     RunResult,
     bench_inputs,
@@ -168,6 +169,37 @@ async def test_cold_start_stops_when_up_fails(stack: Stack) -> None:
 
     assert result.stop_reason == "cold_start_failed"
     assert stack.clock.now - 1000.0 < 600
+
+
+async def test_cold_start_stops_when_down_fails(stack: Stack) -> None:
+    stack.down_code = 1
+    stack.down_stderr = "no such pod"
+    result = await stack.run(make_plan(cold_start=True))
+
+    assert result.stop_reason == "cold_start_failed"
+    assert result.failure_detail == "no such pod"
+    assert result.cold_start == ColdStart(health_s=None, ready_s=None)
+    assert all("up" not in c.args for c in stack.calls)
+
+
+async def test_cold_start_stops_when_the_old_stack_still_answers(stack: Stack) -> None:
+    stack.alive_after_down = True
+    result = await stack.run(make_plan(cold_start=True))
+
+    assert result.stop_reason == "cold_start_failed"
+    assert "still answers" in result.failure_detail
+    assert result.cold_start == ColdStart(health_s=None, ready_s=None)
+    assert all("up" not in c.args for c in stack.calls)
+
+
+async def test_failed_up_reports_the_error_tail(stack: Stack) -> None:
+    stack.ready_after = 10**9
+    stack.up_code = 1
+    stack.up_stderr = "port is busy"
+    stack.clock.pause = 0.002
+    result = await stack.run(make_plan(cold_start=True))
+
+    assert result.failure_detail == "port is busy"
 
 
 async def test_cold_start_stops_without_offline(stack: Stack) -> None:
@@ -389,5 +421,11 @@ def test_subprocess_runner() -> None:
     assert subprocess_runner(["echo", "hi"]) == CommandResult(0, "hi\n")
     assert subprocess_runner(["sh", "-c", "echo $BENCH_X"], env={"BENCH_X": "1"}).stdout == "1\n"
     assert subprocess_runner(["sh", "-c", "exit 3"]).code == 3
+    failed = subprocess_runner(
+        ["sh", "-c", "echo a >&2; head -c 600 /dev/zero | tr '\\0' x >&2; exit 1"]
+    )
+    assert failed.code == 1
+    assert len(failed.stderr_tail) == 500
+    assert failed.stderr_tail.endswith("x")
     assert subprocess_runner(["sleep", "5"], timeout_s=0.1) == CommandResult(-1, "")
     assert subprocess_runner(["/no/such/binary"]) == CommandResult(-1, "")
