@@ -82,6 +82,10 @@ class FakeChat:
         timeout_s: float,
         disable_thinking: bool,
     ) -> ChatCompletion:
+        assert messages[0]["role"] == "system"
+        roles = [m["role"] for m in messages[1:]]
+        assert roles == ["user", "assistant"] * (len(roles) // 2) + ["user"]
+        assert all(m["content"].strip() for m in messages)
         self.messages.append(list(messages))
         self.kwargs.append(
             {
@@ -168,42 +172,39 @@ async def test_stats_filled_on_failure() -> None:
 
 
 @pytest.mark.parametrize(
-    ("first", "reason", "echoes_answer"),
+    ("first", "reason"),
     [
-        pytest.param(_ok("not json"), "answer: json_invalid", True, id="not-json"),
-        pytest.param(_ok(_json(category="bogus")), "category: enum", True, id="foreign-enum"),
-        pytest.param(
-            _ok(_json(summary="   ")), "summary: string_too_short", True, id="blank-summary"
-        ),
-        pytest.param(
-            _ok(_json(summary="x" * 301)), "summary: string_too_long", True, id="long-summary"
-        ),
+        pytest.param(_ok("not json"), "answer: json_invalid", id="not-json"),
+        pytest.param(_ok(_json(category="bogus")), "category: enum", id="foreign-enum"),
+        pytest.param(_ok(_json(summary="   ")), "summary: string_too_short", id="blank-summary"),
+        pytest.param(_ok(_json(summary="x" * 301)), "summary: string_too_long", id="long-summary"),
         pytest.param(
             _ok(json.dumps({**VALID, "extra": "bogus"})),
             "extra: extra_forbidden",
-            True,
             id="extra-field",
         ),
-        pytest.param(_ok(None), "empty answer", False, id="none"),
-        pytest.param(_ok("  \n"), "empty answer", False, id="blank"),
     ],
 )
-async def test_retry_after_invalid(first: ChatCompletion, reason: str, echoes_answer: bool) -> None:
+async def test_retry_after_invalid(first: ChatCompletion, reason: str) -> None:
     fake = FakeChat(first, _ok())
     stats = ClassifyStats()
     result = await _classifier(fake).classify("boom", stats)
 
     base = build_messages("boom")
     correction: ChatMessage = {"role": "user", "content": correction_for([reason])}
-    expected = [*base]
-    if echoes_answer:
-        assert first.content is not None
-        expected.append({"role": "assistant", "content": first.content})
-    expected.append(correction)
+    assert first.content is not None
+    expected = [*base, {"role": "assistant", "content": first.content}, correction]
     assert fake.messages == [base, expected]
     assert "bogus" not in correction["content"]
     assert result.result.category is Category.NETWORK_ERROR
     assert stats.attempts == 2
+
+
+async def test_answer_emails_are_masked() -> None:
+    fake = FakeChat(_ok(_json(summary="Mail to a@b.com bounced", suggested_action="Check a@b.com")))
+    result = await _classifier(fake).classify("boom", ClassifyStats())
+    assert result.result.summary == "Mail to <email> bounced"
+    assert result.result.suggested_action == "Check <email>"
 
 
 async def test_retry_after_length() -> None:
@@ -212,8 +213,37 @@ async def test_retry_after_length() -> None:
     result = await _classifier(fake).classify("boom", ClassifyStats())
 
     base = build_messages("boom")
-    assert fake.messages == [base, [*base, {"role": "user", "content": CUT_OFF_CORRECTION}]]
+    assert fake.messages == [
+        base,
+        [
+            *base,
+            {"role": "assistant", "content": '{"category":"netw'},
+            {"role": "user", "content": CUT_OFF_CORRECTION},
+        ],
+    ]
     assert result.result.severity is Severity.HIGH
+
+
+@pytest.mark.parametrize("content", [None, ""])
+async def test_retry_after_length_without_text(content: str | None) -> None:
+    fake = FakeChat(_ok(content, finish_reason="length", completion_tokens=100), _ok())
+    await _classifier(fake).classify("boom", ClassifyStats())
+
+    first, second = fake.messages
+    assert len(second) == len(first)
+    assert second[-1]["role"] == "user"
+    assert second[-1]["content"].endswith(CUT_OFF_CORRECTION)
+
+
+@pytest.mark.parametrize("content", [None, "  \n"])
+async def test_retry_after_empty_merges_the_correction(content: str | None) -> None:
+    fake = FakeChat(_ok(content), _ok())
+    await _classifier(fake).classify("boom", ClassifyStats())
+
+    first, second = fake.messages
+    assert len(second) == len(first)
+    assert second[-1]["content"].startswith(first[-1]["content"])
+    assert second[-1]["content"].endswith(correction_for(["empty answer"]))
 
 
 async def test_retry_after_length_without_token_count() -> None:
@@ -239,6 +269,13 @@ async def test_two_invalid_answers() -> None:
     with pytest.raises(ModelOutputInvalidError) as info:
         await _classifier(fake).classify("boom", ClassifyStats())
     assert info.value.message == "The model returned an invalid answer twice"
+    assert len(fake.messages) == 2
+
+
+async def test_second_cut_off_below_limit_is_invalid_output() -> None:
+    fake = FakeChat(_ok("nope"), _ok("{", finish_reason="length", completion_tokens=50))
+    with pytest.raises(ModelOutputInvalidError):
+        await _classifier(fake).classify("boom", ClassifyStats())
     assert len(fake.messages) == 2
 
 
@@ -349,6 +386,14 @@ async def test_tokens_stay_none_when_runtime_gives_none() -> None:
     stats = ClassifyStats()
     await _classifier(fake).classify("boom", stats)
     assert (stats.prompt_tokens, stats.completion_tokens) == (None, None)
+
+
+async def test_debug_log_has_no_answer_text(caplog: pytest.LogCaptureFixture) -> None:
+    caplog.set_level(logging.DEBUG)
+    fake = FakeChat(_ok("SECRET-MARK-1 not json"), _ok())
+    await _classifier(fake).classify("boom", ClassifyStats())
+    assert "SECRET-MARK-1" not in caplog.text
+    assert "attempt 1 invalid" in caplog.text
 
 
 @pytest.mark.parametrize("fail", [False, True], ids=["success", "invalid-twice"])

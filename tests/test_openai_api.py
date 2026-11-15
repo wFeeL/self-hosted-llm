@@ -1,6 +1,6 @@
 import asyncio
 import json
-from collections.abc import Callable
+from collections.abc import AsyncGenerator, Callable
 from typing import Any, cast
 
 import anyio
@@ -145,6 +145,65 @@ async def test_sdk_classifies_an_error(respx_mock: respx.MockRouter, serve: Serv
     assert completion.usage.total_tokens == 18
     assert body["truncated"] is False
     assert isinstance(body["latency_ms"], int)
+
+
+async def test_chat_completion_masks_emails(respx_mock: respx.MockRouter, serve: Serve) -> None:
+    answer = {**ANSWER, "summary": "Mail to a@b.com bounced", "suggested_action": "Check a@b.com"}
+    respx_mock.post(URL).mock(return_value=_runtime(json.dumps(answer)))
+    async with serve(create_app(_settings())) as client:
+        response = await client.post(
+            "/v1/chat/completions",
+            json={"model": ALIAS, "messages": [{"role": "user", "content": "boom"}]},
+        )
+    assert response.status_code == 200
+    assert "a@b.com" not in response.text
+    content = response.json()["choices"][0]["message"]["content"]
+    assert json.loads(content)["summary"] == "Mail to <email> bounced"
+    assert json.loads(content)["suggested_action"] == "Check <email>"
+
+
+def _small_body_settings() -> Settings:
+    return _settings(max_input_chars=200, max_request_bytes=2500)
+
+
+def _assert_too_large(response: httpx.Response) -> None:
+    assert response.status_code == 413
+    error = response.json()["error"]
+    assert error["code"] == "request_too_large"
+    assert error["type"] == "invalid_request_error"
+
+
+@pytest.mark.respx(assert_all_called=False)
+async def test_chat_body_too_large(respx_mock: respx.MockRouter, serve: Serve) -> None:
+    route = respx_mock.post(URL).mock(return_value=_good())
+    body = (
+        b'{"model": "granite", "messages": [{"role": "user", "content": "' + b"a" * 3000 + b'"}]}'
+    )
+    async with serve(create_app(_small_body_settings())) as client:
+        response = await client.post("/v1/chat/completions", content=body)
+    _assert_too_large(response)
+    assert route.call_count == 0
+
+
+@pytest.mark.respx(assert_all_called=False)
+async def test_chat_body_too_large_streamed(respx_mock: respx.MockRouter, serve: Serve) -> None:
+    route = respx_mock.post(URL).mock(return_value=_good())
+
+    async def chunks() -> AsyncGenerator[bytes]:
+        yield b'{"model": "granite", "messages": [{"role": "user", "content": "'
+        for _ in range(30):
+            yield b"a" * 100
+        yield b'"}]}'
+
+    stream = chunks()
+    try:
+        async with serve(create_app(_small_body_settings())) as client:
+            response = await client.post("/v1/chat/completions", content=stream)
+    finally:
+        await stream.aclose()
+    assert "content-length" not in response.request.headers
+    _assert_too_large(response)
+    assert route.call_count == 0
 
 
 async def test_usage_is_left_out_when_the_runtime_gave_no_counts(

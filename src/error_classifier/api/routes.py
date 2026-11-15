@@ -13,7 +13,12 @@ from error_classifier.api.disconnect import ClientDisconnectedError, cancel_on_d
 from error_classifier.classify.service import Classification, Classifier, ClassifyStats
 from error_classifier.concurrency import ConcurrencyLimiter
 from error_classifier.config import Settings
-from error_classifier.errors import InvalidInputError, ServiceError, error_body
+from error_classifier.errors import (
+    InvalidInputError,
+    RequestTooLargeError,
+    ServiceError,
+    error_body,
+)
 from error_classifier.llm.client import LlmClient
 
 router = APIRouter()
@@ -48,7 +53,7 @@ def describe_invalid(errors: Iterable[Mapping[str, object]]) -> str:
 
 
 async def read_body_limited(request: Request, limit: int) -> bytes:
-    too_large = InvalidInputError(f"Request body is larger than {limit} bytes")
+    too_large = RequestTooLargeError(f"Request body is larger than {limit} bytes")
     declared = request.headers.get("content-length", "")
     if declared.isdecimal() and int(declared) > limit:
         raise too_large

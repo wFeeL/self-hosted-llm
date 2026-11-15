@@ -131,7 +131,17 @@ def test_run_writes_a_complete_file(
     assert bench.summary.cold_start is None
     memory = bench.summary.memory
     assert (memory.llm_peak, memory.llm_anon, memory.llm_file) == (9000, 3000, 700)
-    assert (memory.api_peak, memory.api_anon, memory.api_file) == (9000, 3000, 700)
+    assert (memory.api_peak, memory.api_anon, memory.api_file) == (900, 3000, 700)
+    assert (memory.llm_swap_peak, memory.llm_swap_max, memory.llm_memory_max) == (
+        70,
+        "0",
+        "6442450944",
+    )
+    assert (memory.api_swap_peak, memory.api_swap_max, memory.api_memory_max) == (
+        7,
+        "max",
+        "536870912",
+    )
     assert bench.summary.aggregates == aggregate(bench.records, bench.readings)
     assert bench.summary.aggregates.series.n_ok == 20
     assert len(bench.records) == 101

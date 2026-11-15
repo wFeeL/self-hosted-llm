@@ -7,6 +7,7 @@ import platform
 import sys
 import time
 from collections.abc import Awaitable, Callable, Sequence
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Final, Literal, cast
@@ -118,12 +119,27 @@ def _image(run: Runner, engine: str, container: str) -> tuple[str | None, str | 
     return text or None, image_id, size
 
 
-def _cgroup_memory(run: Runner, engine: str, container: str) -> tuple[int | None, dict[str, int]]:
+@dataclass(frozen=True)
+class CgroupMemory:
+    peak: int | None
+    swap_peak: int | None
+    swap_max: str | None
+    memory_max: str | None
+    stat: dict[str, int]
+
+
+def _cgroup_memory(run: Runner, engine: str, container: str) -> CgroupMemory:
     peak = cgroup_file(run, engine, container, "memory.peak")
+    swap_peak = cgroup_file(run, engine, container, "memory.swap.peak")
+    swap_max = cgroup_file(run, engine, container, "memory.swap.max")
+    memory_max = cgroup_file(run, engine, container, "memory.max")
     stat = cgroup_file(run, engine, container, "memory.stat")
-    return (
-        None if peak is None else parse_int(peak),
-        {} if stat is None else parse_memory_stat(stat),
+    return CgroupMemory(
+        peak=None if peak is None else parse_int(peak),
+        swap_peak=None if swap_peak is None else parse_int(swap_peak),
+        swap_max=None if swap_max is None else swap_max.strip(),
+        memory_max=None if memory_max is None else memory_max.strip(),
+        stat={} if stat is None else parse_memory_stat(stat),
     )
 
 
@@ -241,8 +257,8 @@ def _run(
         return 3
     after = loadavg()
 
-    llm_peak, llm_stat = _cgroup_memory(run, engine, llm_container)
-    api_peak, api_stat = _cgroup_memory(run, engine, api_container)
+    llm_mem = _cgroup_memory(run, engine, llm_container)
+    api_mem = _cgroup_memory(run, engine, api_container)
     llm_image, llm_image_id, llm_image_size = _image(run, engine, llm_container)
     api_image, api_image_id, api_image_size = _image(run, engine, api_container)
     model_file_size: int | None = None
@@ -293,12 +309,18 @@ def _run(
         config=config,
         cold_start=result.cold_start,
         memory=Memory(
-            llm_peak=llm_peak,
-            llm_anon=llm_stat.get("anon"),
-            llm_file=llm_stat.get("file"),
-            api_peak=api_peak,
-            api_anon=api_stat.get("anon"),
-            api_file=api_stat.get("file"),
+            llm_peak=llm_mem.peak,
+            llm_anon=llm_mem.stat.get("anon"),
+            llm_file=llm_mem.stat.get("file"),
+            api_peak=api_mem.peak,
+            api_anon=api_mem.stat.get("anon"),
+            api_file=api_mem.stat.get("file"),
+            llm_swap_peak=llm_mem.swap_peak,
+            api_swap_peak=api_mem.swap_peak,
+            llm_swap_max=llm_mem.swap_max,
+            api_swap_max=api_mem.swap_max,
+            llm_memory_max=llm_mem.memory_max,
+            api_memory_max=api_mem.memory_max,
         ),
         aggregates=aggregate(result.records, result.readings),
     )

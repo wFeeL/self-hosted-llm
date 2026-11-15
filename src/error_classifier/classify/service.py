@@ -12,6 +12,7 @@ from error_classifier.classify.prompt import (
     correction_for,
     normalize_input,
 )
+from error_classifier.classify.redact import mask_emails
 from error_classifier.classify.schema import SCHEMA_NAME, ClassificationResult, response_schema
 from error_classifier.config import Settings
 from error_classifier.errors import (
@@ -86,6 +87,12 @@ def _add(total: int | None, value: int | None) -> int | None:
     return value if total is None else total + value
 
 
+def _with_correction(base: list[ChatMessage], correction: str) -> list[ChatMessage]:
+    # Strict chat templates reject two user turns in a row, so the correction joins the last one.
+    last = base[-1]
+    return [*base[:-1], {"role": last["role"], "content": f"{last['content']}\n\n{correction}"}]
+
+
 def _reasons(error: ValidationError) -> list[str]:
     # Field and error type only: the invalid value can echo the user's text.
     return [
@@ -144,33 +151,49 @@ class Classifier:
 
             if completion.finish_reason == "length":
                 tokens = completion.completion_tokens
-                if tokens is not None and tokens < self._options.max_output_tokens:
+                if attempt == 0 and tokens is not None and tokens < self._options.max_output_tokens:
                     # Stopped before max_tokens, so the context slot ran out, not the answer budget.
                     raise InvalidInputError(
                         "The error text is too long for the model context, shorten it"
                     )
                 logger.debug("attempt %d was cut off at the token limit", stats.attempts)
-                messages = [*base, {"role": "user", "content": CUT_OFF_CORRECTION}]
+                if (completion.content or "").strip():
+                    messages = [
+                        *base,
+                        {"role": "assistant", "content": completion.content or ""},
+                        {"role": "user", "content": CUT_OFF_CORRECTION},
+                    ]
+                else:
+                    messages = _with_correction(base, CUT_OFF_CORRECTION)
                 continue
             if completion.finish_reason != "stop":
                 raise LlmBadResponseError("LLM runtime finished with an unexpected reason")
             content = completion.content
             if content is None or not content.strip():
                 logger.debug("attempt %d returned an empty answer", stats.attempts)
-                correction = correction_for(["empty answer"])
-                messages = [*base, {"role": "user", "content": correction}]
+                messages = _with_correction(base, correction_for(["empty answer"]))
                 continue
             try:
                 result = ClassificationResult.model_validate_json(content)
             except ValidationError as exc:
                 reasons = _reasons(exc)
-                logger.debug("attempt %d invalid: %s; content=%r", stats.attempts, reasons, content)
+                logger.debug(
+                    "attempt %d invalid: %s; %d characters", stats.attempts, reasons, len(content)
+                )
                 messages = [
                     *base,
                     {"role": "assistant", "content": content},
                     {"role": "user", "content": correction_for(reasons)},
                 ]
                 continue
+            # The model may repeat an address from the error text;
+            # the caller already has the original.
+            result = result.model_copy(
+                update={
+                    "summary": mask_emails(result.summary),
+                    "suggested_action": mask_emails(result.suggested_action),
+                }
+            )
             latency_ms = round((self._clock() - start) * 1000)
             return Classification(result, completion.model, norm.truncated, latency_ms)
         raise ModelOutputInvalidError("The model returned an invalid answer twice")

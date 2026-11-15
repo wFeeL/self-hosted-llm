@@ -9,6 +9,8 @@ FILES = sorted((ROOT / "bench" / "results").glob("*.jsonl"))
 DOC = ROOT / "README.md"
 MARKER_START = "<!-- bench-table:start -->"
 MARKER_END = "<!-- bench-table:end -->"
+# The 50-request series was run once, before the default moved to a model without it.
+SERIES_MODEL = "qwen3.5-2b-q4km"
 EXPECTED_MODELS = {"granite-4.1-3b-q4km", "qwen3-4b-instruct-2507-q4km", "qwen3.5-2b-q4km"}
 
 
@@ -40,16 +42,26 @@ def test_summary_aggregates_are_recomputed_from_the_rows() -> None:
         assert aggregate(bench.records, bench.readings) == bench.summary.aggregates, path.name
 
 
-def test_only_the_default_model_runs_the_sequential_series() -> None:
-    default = _default_alias()
-    assert default in EXPECTED_MODELS
+def test_only_one_model_ran_the_sequential_series() -> None:
     models = {b.summary.config.model: b.summary.config for b in _benches()}
 
-    assert default in models
-    assert models[default].skip_sequential is False
+    assert SERIES_MODEL in models
+    assert models[SERIES_MODEL].skip_sequential is False
     for model, config in models.items():
-        if model != default:
+        if model != SERIES_MODEL:
             assert config.skip_sequential is True, model
+
+
+def test_todo_names_the_missing_series() -> None:
+    default = _default_alias()
+    config = next(b.summary.config for b in _benches() if b.summary.config.model == default)
+    if not config.skip_sequential:
+        return
+    readme = DOC.read_text(encoding="utf-8")
+    assert "## About this test task" in readme
+    section = readme.split("## About this test task", 1)[1]
+    assert "50-request series" in section
+    assert default in section
 
 
 def test_every_run_probed_the_queue_and_kept_the_series_clean() -> None:

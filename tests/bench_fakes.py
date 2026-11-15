@@ -222,11 +222,19 @@ class Stack:
         if name == "cpu.stat":
             self.cpu[container] += 1_000_000
             return CommandResult(0, f"usage_usec {self.cpu[container]}\nuser_usec 5\n")
-        if name == "memory.current":
-            return CommandResult(0, "5000\n")
-        if name == "memory.peak":
-            return CommandResult(0, "9000\n")
-        return CommandResult(0, "anon 3000\nfile 700\n")
+        if name == "memory.stat":
+            return CommandResult(0, "anon 3000\nfile 700\n")
+        # Different per container and file, so a swapped container or file name fails a test.
+        values = {
+            "memory.current": {"llm_c": "5000\n", "api_c": "500\n"},
+            "memory.peak": {"llm_c": "9000\n", "api_c": "900\n"},
+            "memory.swap.current": {"llm_c": "40\n", "api_c": "4\n"},
+            "memory.swap.peak": {"llm_c": "70\n", "api_c": "7\n"},
+            "memory.swap.max": {"llm_c": "0\n", "api_c": "max\n"},
+            "memory.max": {"llm_c": "6442450944\n", "api_c": "536870912\n"},
+        }
+        value = values.get(name, {}).get(container)
+        return CommandResult(1, "") if value is None else CommandResult(0, value)
 
     async def run(
         self,

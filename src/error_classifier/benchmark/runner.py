@@ -249,11 +249,13 @@ class _Bench:
         cpu = cgroup_file(self.run, engine, name, "cpu.stat")
         current = cgroup_file(self.run, engine, name, "memory.current")
         stat = cgroup_file(self.run, engine, name, "memory.stat")
+        swap = cgroup_file(self.run, engine, name, "memory.swap.current")
         return CgroupReading(
             container=container,
             cpu_usage_usec=None if cpu is None else parse_cpu_stat(cpu),
             memory_current=None if current is None else parse_int(current),
             memory_anon=None if stat is None else parse_memory_stat(stat).get("anon"),
+            memory_swap_current=None if swap is None else parse_int(swap),
         )
 
     async def take_reading(self, phase: Phase, edge: Literal["start", "end"]) -> None:

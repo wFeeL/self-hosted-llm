@@ -95,7 +95,7 @@ The tests in `tests/test_openai_api.py` call the service through the official cl
 
 The model is configuration, not code: set the variables of one block below in `.env` and recreate `llm` with `docker compose up -d`. A new model is downloaded into the `models` volume on its first start. Any other GGUF on Hugging Face works the same way; `LLM_DISABLE_THINKING=true` is needed for models that think by default.
 
-Recommended: `qwen3.5-2b-q4km`
+Recommended: `qwen3-4b-instruct-2507-q4km`
 
 The table applies the evaluation rule to the models whose measured memory fits each VPS size: `llm need` and `api peak` from the benchmarks plus 0.75 GiB for the system and Docker (an estimate). `scripts/recommend.py` prints it, and a test checks that it matches.
 
@@ -104,8 +104,8 @@ The table applies the evaluation rule to the models whose measured memory fits e
 |---|---|---|---|
 | 2 GiB | - | none | no measured model fits |
 | 4 GiB | qwen3.5-2b-q4km | qwen3.5-2b-q4km | the only model that passed the validity and leak thresholds |
-| 8 GiB | granite-4.1-3b-q4km, qwen3-4b-instruct-2507-q4km, qwen3.5-2b-q4km | qwen3.5-2b-q4km | the only model that passed the validity and leak thresholds |
-| 16 GiB | granite-4.1-3b-q4km, qwen3-4b-instruct-2507-q4km, qwen3.5-2b-q4km | qwen3.5-2b-q4km | the only model that passed the validity and leak thresholds |
+| 8 GiB | granite-4.1-3b-q4km, qwen3-4b-instruct-2507-q4km, qwen3.5-2b-q4km | qwen3-4b-instruct-2507-q4km | best on both fields, the others are more than 6 rows behind or McNemar p < 0.05 |
+| 16 GiB | granite-4.1-3b-q4km, qwen3-4b-instruct-2507-q4km, qwen3.5-2b-q4km | qwen3-4b-instruct-2507-q4km | best on both fields, the others are more than 6 rows behind or McNemar p < 0.05 |
 
 Not measured: granite-4.0-1b-q4km.
 <!-- vps-table:end -->
@@ -135,7 +135,7 @@ MODEL_ALIAS=qwen3-4b-instruct-2507-q4km
 LLAMA_ARG_HF_REPO=bartowski/Qwen_Qwen3-4B-Instruct-2507-GGUF
 LLAMA_ARG_HF_FILE=Qwen_Qwen3-4B-Instruct-2507-Q4_K_M.gguf
 LLM_DISABLE_THINKING=false
-LLM_MEM_LIMIT=6g
+LLM_MEM_LIMIT=6656m
 ```
 <!-- model-env:qwen3-4b-instruct-2507-q4km:end -->
 
@@ -482,7 +482,8 @@ Every error has the shape `{"error": {"code": "...", "message": "...", "type": "
 
 | code | HTTP | meaning |
 |---|---|---|
-| invalid_input | 400 | The body is too large or not valid, `message` is missing, not a string or empty, or the text does not fit the model context |
+| invalid_input | 400 | The body is not valid, `message` is missing, not a string or empty, or the text does not fit the model context |
+| request_too_large | 413 | The request body is larger than `MAX_REQUEST_BYTES` |
 | model_output_invalid | 502 | The model returned an invalid answer twice |
 | llm_bad_response | 502 | The runtime rejected the request or answered in an unexpected shape |
 | llm_timeout | 504 | The model did not finish within `REQUEST_TIMEOUT_S`, or the deadline left no time for a retry after an invalid answer |
@@ -541,12 +542,12 @@ With 60 rows one row is 1.7 percentage points. A single share is uncertain by ab
 ### Results
 
 <!-- eval-table:start -->
-| Model | Items | Valid, first try | Valid | Category | Category, strict | Severity | Severity ±1 | Both | English | Text limits | Leaks | p50, s | p90, s | Max, s | Latency n |
-|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| granite-4.0-1b-q4km | 60 | 60 (100%) | 60 (100%) | 46 (77%) | 44 (73%) | 31 (52%) | 55 (92%) | 24 (40%) | 60 (100%) | 60 (100%) | 1/7 | 3.9 | 4.6 | 5.3 | 60 |
-| granite-4.1-3b-q4km | 60 | 60 (100%) | 60 (100%) | 54 (90%) | 53 (88%) | 28 (47%) | 55 (92%) | 25 (42%) | 60 (100%) | 60 (100%) | 2/7 | 7.7 | 11.6 | 16.3 | 60 |
-| qwen3-4b-instruct-2507-q4km | 60 | 60 (100%) | 60 (100%) | 56 (93%) | 52 (87%) | 38 (63%) | 59 (98%) | 34 (57%) | 60 (100%) | 60 (100%) | 1/7 | 10.2 | 18.3 | 29.6 | 60 |
-| qwen3.5-2b-q4km | 60 | 60 (100%) | 60 (100%) | 52 (87%) | 46 (77%) | 27 (45%) | 56 (93%) | 24 (40%) | 60 (100%) | 60 (100%) | 0/7 | 4.2 | 5.2 | 8.9 | 60 |
+| Model | Items | Valid, first try | Valid | Category | Category, strict | Severity | Severity ±1 | Both | English | Text limits | Leaks | Echoed by the model | p50, s | p90, s | Max, s | Latency n |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| granite-4.0-1b-q4km | 60 | 60 (100%) | 60 (100%) | 46 (77%) | 44 (73%) | 31 (52%) | 55 (92%) | 24 (40%) | 60 (100%) | 60 (100%) | 1/7 | 1/7 | 3.9 | 4.6 | 5.3 | 60 |
+| granite-4.1-3b-q4km | 60 | 60 (100%) | 60 (100%) | 54 (90%) | 53 (88%) | 28 (47%) | 55 (92%) | 25 (42%) | 60 (100%) | 60 (100%) | 1/7 | 2/7 | 7.7 | 11.6 | 16.3 | 60 |
+| qwen3-4b-instruct-2507-q4km | 60 | 60 (100%) | 60 (100%) | 56 (93%) | 52 (87%) | 38 (63%) | 59 (98%) | 34 (57%) | 60 (100%) | 60 (100%) | 0/7 | 1/7 | 10.2 | 18.3 | 29.6 | 60 |
+| qwen3.5-2b-q4km | 60 | 60 (100%) | 60 (100%) | 52 (87%) | 46 (77%) | 27 (45%) | 56 (93%) | 24 (40%) | 60 (100%) | 60 (100%) | 0/7 | 0/7 | 4.2 | 5.2 | 8.9 | 60 |
 
 | Model | ok |
 |---|---|
@@ -579,7 +580,7 @@ With 60 rows one row is 1.7 percentage points. A single share is uncertain by ab
 
 p values are not corrected for multiple comparisons: 6 pairs; with Holm's correction the smallest p is significant only below 0.0083.
 
-Choice by the rule: qwen3.5-2b-q4km (the only model that passed the validity and leak thresholds).
+Choice by the rule: qwen3-4b-instruct-2507-q4km (best on both fields, the others are more than 6 rows behind or McNemar p < 0.05).
 <!-- eval-table:end -->
 
 ### Reading the results
@@ -664,11 +665,11 @@ Engine: podman, podman version 5.7.0; 8 vCPU x86_64; llm threads 6, context 8192
 | qwen3-4b-instruct-2507-q4km | - | - | - | - | - | - | - | - |
 | qwen3.5-2b-q4km | 6.1 | 7.6 | 6.8 | 12.5 | 0.85 GiB | 0.94 GiB | 50 | 0 |
 
-| Model | llm peak | llm file | api peak | api file | GGUF | RAM floor | RAM, conservative | RAM, worst | llm image | api image |
-|---|---|---|---|---|---|---|---|---|---|---|
-| granite-4.1-3b-q4km | 2.45 GiB | 0.03 GiB | 0.06 GiB | - | 1.96 GiB | 2.34 GiB | 4.29 GiB | 4.40 GiB | 0.78 GiB | 0.19 GiB |
-| qwen3-4b-instruct-2507-q4km | 5.77 GiB | 2.28 GiB | 0.09 GiB | - | 2.33 GiB | 3.06 GiB | 5.39 GiB | 8.09 GiB | 0.78 GiB | 0.19 GiB |
-| qwen3.5-2b-q4km | 2.34 GiB | 1.32 GiB | 0.10 GiB | - | 1.30 GiB | 1.01 GiB | 2.31 GiB | 3.64 GiB | 0.78 GiB | 0.19 GiB |
+| Model | llm peak | llm file | api peak | api file | llm swap peak | llm swap max | llm memory max | api swap peak | api swap max | api memory max | GGUF | RAM floor | RAM, conservative | RAM, worst | llm image | api image |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| granite-4.1-3b-q4km | 2.45 GiB | 0.03 GiB | 0.06 GiB | - | - | - | - | - | - | - | 1.96 GiB | 2.34 GiB | 4.29 GiB | 4.40 GiB | 0.78 GiB | 0.19 GiB |
+| qwen3-4b-instruct-2507-q4km | 5.77 GiB | 2.28 GiB | 0.09 GiB | - | - | - | - | - | - | - | 2.33 GiB | 3.06 GiB | 5.39 GiB | 8.09 GiB | 0.78 GiB | 0.19 GiB |
+| qwen3.5-2b-q4km | 2.34 GiB | 1.32 GiB | 0.10 GiB | - | - | - | - | - | - | - | 1.30 GiB | 1.01 GiB | 2.31 GiB | 3.64 GiB | 0.78 GiB | 0.19 GiB |
 
 | Model | llm need | api peak | Disk |
 |---|---|---|---|
@@ -715,6 +716,7 @@ Constraints of the work: the development machine was shared with another project
 TODO:
 
 - Run the stack and the VPS guide on Docker, including a reboot, and repeat the benchmarks there.
+- Run the 50-request series for the default model `qwen3-4b-instruct-2507-q4km`; here only `qwen3.5-2b-q4km` ran it.
 - Run the live tests against the model, including `tests/live/test_openai_live.py` through the official client.
 - Benchmark Granite 4.0 1B and evaluate a 7 to 8B model on a machine that can take the load.
 - Repeat the rows that decided the exclusion of Granite 4.0 1B and Qwen3-4B to see whether their leaks are stable.

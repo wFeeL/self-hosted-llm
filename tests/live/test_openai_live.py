@@ -8,10 +8,11 @@ import pytest
 from openai.types.chat import ChatCompletion
 
 from error_classifier.classify.schema import Category, ClassificationResult
+from error_classifier.evaluation.metrics import DEFAULT_MODEL
 
 # Read at import, before the autouse clean_env fixture runs.
 API_URL = os.environ.get("API_URL", "http://127.0.0.1:8000")
-MODEL_ALIAS = os.environ.get("MODEL_ALIAS", "qwen3.5-2b-q4km")
+MODEL_ALIAS = os.environ.get("MODEL_ALIAS", DEFAULT_MODEL)
 API_KEY = os.environ.get("API_KEY") or "unused"
 
 pytestmark = pytest.mark.live

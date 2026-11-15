@@ -60,6 +60,7 @@
     "truncated": 0,
     "secret_ok_items": 7,
     "leaks": 0,
+    "echoed": 0,
     "latency_n": 60,
     "latency_p50_ms": 4238,
     "latency_p90_ms": 5156,

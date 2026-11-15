@@ -171,6 +171,17 @@ def _small_body_settings() -> Settings:
     return _settings(max_input_chars=200, max_request_bytes=2500)
 
 
+async def test_classify_masks_emails(respx_mock: respx.MockRouter, serve: Serve) -> None:
+    answer = {**ANSWER, "summary": "Mail to a@b.com bounced", "suggested_action": "Check a@b.com"}
+    respx_mock.post(URL).mock(return_value=_runtime(json.dumps(answer)))
+    async with serve(create_app(_settings())) as client:
+        response = await _post(client, "boom")
+    assert response.status_code == 200
+    assert "a@b.com" not in response.text
+    assert response.json()["summary"] == "Mail to <email> bounced"
+    assert response.json()["suggested_action"] == "Check <email>"
+
+
 @pytest.mark.respx(assert_all_called=False)
 async def test_body_too_large_with_content_length(
     respx_mock: respx.MockRouter, serve: Serve
@@ -179,8 +190,10 @@ async def test_body_too_large_with_content_length(
     body = b'{"message": "' + b"a" * 3000 + b'"}'
     async with serve(create_app(_small_body_settings())) as client:
         response = await client.post("/classify", content=body)
-    assert response.status_code == 400
-    assert response.json() == _error_body("invalid_input", "Request body is larger than 2500 bytes")
+    assert response.status_code == 413
+    assert response.json() == _error_body(
+        "request_too_large", "Request body is larger than 2500 bytes"
+    )
     assert route.call_count == 0
 
 
@@ -201,8 +214,10 @@ async def test_body_too_large_streamed(respx_mock: respx.MockRouter, serve: Serv
     finally:
         await stream.aclose()
     assert "content-length" not in response.request.headers
-    assert response.status_code == 400
-    assert response.json() == _error_body("invalid_input", "Request body is larger than 2500 bytes")
+    assert response.status_code == 413
+    assert response.json() == _error_body(
+        "request_too_large", "Request body is larger than 2500 bytes"
+    )
     assert route.call_count == 0
 
 
