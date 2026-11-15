@@ -190,18 +190,19 @@ All settings live in `.env`, copied from `.env.example`; compose passes each ser
 
 | variable | default | meaning |
 |---|---|---|
-| MODEL_ALIAS | `qwen3.5-2b-q4km` | Name of the model in llama-server and in API answers; see [Choosing a model](#choosing-a-model) |
-| LLAMA_ARG_HF_REPO | `bartowski/Qwen_Qwen3.5-2B-GGUF` | Hugging Face repository of the GGUF file |
-| LLAMA_ARG_HF_FILE | `Qwen_Qwen3.5-2B-Q4_K_M.gguf` | GGUF file in that repository, downloaded on the first start |
+| MODEL_ALIAS | `qwen3-4b-instruct-2507-q4km` | Name of the model in llama-server and in API answers; see [Choosing a model](#choosing-a-model) |
+| LLAMA_ARG_HF_REPO | `bartowski/Qwen_Qwen3-4B-Instruct-2507-GGUF` | Hugging Face repository of the GGUF file |
+| LLAMA_ARG_HF_FILE | `Qwen_Qwen3-4B-Instruct-2507-Q4_K_M.gguf` | GGUF file in that repository, downloaded on the first start |
 | LLAMA_ARG_CTX_SIZE | 8192 | Context of llama-server, split between the slots; keep it at least `LLAMA_ARG_N_PARALLEL` × 4096 |
 | LLAMA_ARG_N_PARALLEL | 2 | Slots of llama-server, and the number of requests the API classifies at once |
 | LLAMA_ARG_THREADS | 6 | CPU threads of llama-server; keep it at `LLM_CPUS` or below |
 | LLAMA_ARG_BATCH | 512 | Prompt batch; a cancelled request frees its slot only after the current batch |
+| LLAMA_ARG_CACHE_RAM | 0 | Prompt cache of llama-server in host RAM, MiB; 0 turns it off, and the shared prompt prefix is still reused inside each slot. llama-server's own default of 8192 is above the memory limit; the evaluation and the benchmarks ran with that default |
 | LLAMA_ARG_MMPROJ_AUTO | off | Keeps llama-server from downloading a vision projector the service does not use |
 | LLAMA_ARG_ENDPOINT_METRICS | 1 | Enables `/metrics` of llama-server, used by the benchmark |
 | LLAMA_ARG_OFFLINE | 0 | `1` loads the model only from the volume; set it after the first start and back to `0` to change the model |
 | LLM_CPUS | 6 | CPU limit of the `llm` container |
-| LLM_MEM_LIMIT | 6g | Memory limit of the `llm` container (swap is not added); see the benchmark tables before lowering it |
+| LLM_MEM_LIMIT | 6656m | Memory limit of the `llm` container; Docker adds no swap on top of it, podman-compose ignored that setting in the measurements. Take the value for your server from the sizing table in [Deploying on a clean VPS](#deploying-on-a-clean-vps) |
 | API_CPUS | 1 | CPU limit of the `api` container |
 | API_MEM_LIMIT | 512m | Memory limit of the `api` container |
 | LLM_START_PERIOD | 1800s | How long the `llm` healthcheck tolerates failures while the model downloads and loads; the service is healthy at the first successful check, so a long window costs nothing |
@@ -217,7 +218,7 @@ All settings live in `.env`, copied from `.env.example`; compose passes each ser
 | MAX_REQUEST_BYTES | 262144 | Largest request body, not less than 12 times `MAX_INPUT_CHARS` plus 64 |
 | MAX_OUTPUT_TOKENS | 256 | Token limit of the model answer, 16 to 2048 |
 | LLM_TEMPERATURE | 0.0 | Sampling temperature, 0 to 2 |
-| LLM_DISABLE_THINKING | required (`true` in `.env.example` for the default model) | Sends `chat_template_kwargs` with `enable_thinking: false` for models that think |
+| LLM_DISABLE_THINKING | required (`false` in `.env.example` for the default model, `true` for Qwen3.5-2B) | Sends `chat_template_kwargs` with `enable_thinking: false` for models that think |
 | API_KEY | empty | Access key: when set, `/classify` and `/v1/*` need `Authorization: Bearer <API_KEY>` and answer 401 `unauthorized` otherwise; letters, digits and `. _ ~ + / = -` only (use `openssl rand -hex 32`); `/health` and `/ready` stay open |
 | HF_TOKEN | not set | Only for gated models, passed to `llm` with a `compose.override.yaml` (see [Deploying on a clean VPS](#deploying-on-a-clean-vps)) |
 
