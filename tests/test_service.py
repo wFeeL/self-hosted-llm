@@ -206,6 +206,13 @@ async def test_retry_after_invalid(first: ChatCompletion, reason: str, echoes_an
     assert stats.attempts == 2
 
 
+async def test_answer_emails_are_masked() -> None:
+    fake = FakeChat(_ok(_json(summary="Mail to a@b.com bounced", suggested_action="Check a@b.com")))
+    result = await _classifier(fake).classify("boom", ClassifyStats())
+    assert result.result.summary == "Mail to <email> bounced"
+    assert result.result.suggested_action == "Check <email>"
+
+
 async def test_retry_after_length() -> None:
     cut = _ok('{"category":"netw', finish_reason="length", completion_tokens=100)
     fake = FakeChat(cut, _ok())

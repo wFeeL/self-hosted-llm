@@ -12,6 +12,7 @@ from error_classifier.classify.prompt import (
     correction_for,
     normalize_input,
 )
+from error_classifier.classify.redact import mask_emails
 from error_classifier.classify.schema import SCHEMA_NAME, ClassificationResult, response_schema
 from error_classifier.config import Settings
 from error_classifier.errors import (
@@ -171,6 +172,14 @@ class Classifier:
                     {"role": "user", "content": correction_for(reasons)},
                 ]
                 continue
+            # The model may repeat an address from the error text;
+            # the caller already has the original.
+            result = result.model_copy(
+                update={
+                    "summary": mask_emails(result.summary),
+                    "suggested_action": mask_emails(result.suggested_action),
+                }
+            )
             latency_ms = round((self._clock() - start) * 1000)
             return Classification(result, completion.model, norm.truncated, latency_ms)
         raise ModelOutputInvalidError("The model returned an invalid answer twice")

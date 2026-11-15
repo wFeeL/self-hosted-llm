@@ -147,6 +147,21 @@ async def test_sdk_classifies_an_error(respx_mock: respx.MockRouter, serve: Serv
     assert isinstance(body["latency_ms"], int)
 
 
+async def test_chat_completion_masks_emails(respx_mock: respx.MockRouter, serve: Serve) -> None:
+    answer = {**ANSWER, "summary": "Mail to a@b.com bounced", "suggested_action": "Check a@b.com"}
+    respx_mock.post(URL).mock(return_value=_runtime(json.dumps(answer)))
+    async with serve(create_app(_settings())) as client:
+        response = await client.post(
+            "/v1/chat/completions",
+            json={"model": ALIAS, "messages": [{"role": "user", "content": "boom"}]},
+        )
+    assert response.status_code == 200
+    assert "a@b.com" not in response.text
+    content = response.json()["choices"][0]["message"]["content"]
+    assert json.loads(content)["summary"] == "Mail to <email> bounced"
+    assert json.loads(content)["suggested_action"] == "Check <email>"
+
+
 async def test_usage_is_left_out_when_the_runtime_gave_no_counts(
     respx_mock: respx.MockRouter, serve: Serve
 ) -> None:
