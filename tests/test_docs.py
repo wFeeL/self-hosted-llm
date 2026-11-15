@@ -1,5 +1,6 @@
 import json
 import re
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -9,7 +10,6 @@ from error_classifier.classify.schema import Category, Severity
 from error_classifier.errors import ServiceError
 
 ROOT = Path(__file__).resolve().parents[1]
-ARCHITECTURE = (ROOT / "docs" / "architecture.md").read_text(encoding="utf-8")
 README = (ROOT / "README.md").read_text(encoding="utf-8")
 
 ENUM_VALUES = {str(v) for v in [*Category, *Severity]}
@@ -41,7 +41,7 @@ def test_prompt_definitions_were_parsed() -> None:
 
 @pytest.mark.parametrize("value", sorted(ENUM_VALUES))
 def test_enum_value_row_matches_the_prompt(value: str) -> None:
-    assert f"| {value} | {_definitions()[value]} |" in ARCHITECTURE
+    assert f"| {value} | {_definitions()[value]} |" in README
 
 
 def _error_classes() -> list[type[ServiceError]]:
@@ -50,16 +50,16 @@ def _error_classes() -> list[type[ServiceError]]:
 
 @pytest.mark.parametrize("cls", [ServiceError, *_error_classes()], ids=lambda c: c.__name__)
 def test_error_code_row(cls: type[ServiceError]) -> None:
-    assert f"| {cls.code} | {cls.status_code} |" in ARCHITECTURE
+    assert f"| {cls.code} | {cls.status_code} |" in README
 
 
 @pytest.mark.parametrize("name", SETTINGS_VARIABLES)
 def test_setting_is_documented(name: str) -> None:
-    assert f"| {name} |" in ARCHITECTURE
+    assert f"| {name} |" in README
 
 
 def test_no_internal_network_claim() -> None:
-    assert "internal network" not in ARCHITECTURE
+    assert "internal network" not in README
 
 
 def test_readme_explains_language_and_runtime_api() -> None:
@@ -80,3 +80,19 @@ def test_readme_example_response_has_the_documented_fields() -> None:
         "latency_ms",
         "truncated",
     }
+
+
+def test_only_the_readme_is_markdown() -> None:
+    try:
+        result = subprocess.run(
+            ["git", "ls-files", "*.md"], cwd=ROOT, capture_output=True, text=True
+        )
+    except FileNotFoundError:
+        pytest.skip("git is not available")
+    if result.returncode != 0:
+        pytest.skip(f"not a git repository: {result.stderr.strip()}")
+    assert result.stdout.split() == ["README.md"]
+
+
+def test_no_docs_directory() -> None:
+    assert not (ROOT / "docs").exists()
