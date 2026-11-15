@@ -1,7 +1,11 @@
+import re
 from typing import Literal, Self
 
 from pydantic import Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+# Compose and shells rewrite $, quotes and #, so such a key would reach the API altered.
+API_KEY_PATTERN = re.compile(r"[A-Za-z0-9._~+/=-]+")
 
 
 class Settings(BaseSettings):
@@ -28,8 +32,10 @@ class Settings(BaseSettings):
     def _check_api_key(cls, value: SecretStr | None) -> SecretStr | None:
         if value is None or not value.get_secret_value():
             return None
-        if not all(0x21 <= ord(char) <= 0x7E for char in value.get_secret_value()):
-            raise ValueError("API_KEY must be printable ASCII without spaces")
+        if not API_KEY_PATTERN.fullmatch(value.get_secret_value()):
+            raise ValueError(
+                "API_KEY may contain only letters, digits and the characters . _ ~ + / = -"
+            )
         return value
 
     @field_validator("llm_base_url", mode="after")

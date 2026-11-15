@@ -73,7 +73,8 @@ class Stack:
         self.calls: list[Call] = []
         self.latency_s = 0.1
         self.posts: list[str] = []
-        self.api_auth: list[str | None] = []  # Authorization seen by /classify and /ready
+        self.api_auth: list[str | None] = []  # Authorization seen by /classify
+        self.ready_auth: list[str | None] = []  # Authorization seen by /ready
         self.llm_auth: list[str | None] = []  # Authorization seen by llama-server
         self.timeouts: list[dict[str, float | None]] = []
         self.inflight = 0
@@ -125,7 +126,7 @@ class Stack:
         return httpx.Response(200, json={"category": "other", "model": "m-test"})
 
     def _ready(self, request: httpx.Request) -> httpx.Response:
-        self.api_auth.append(request.headers.get("authorization"))
+        self.ready_auth.append(request.headers.get("authorization"))
         if "ready" in self.unchecked and self.down_seen:
             self.unchecked.discard("ready")
             return httpx.Response(200 if self.alive_after_down else 503)

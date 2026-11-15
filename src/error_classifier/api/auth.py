@@ -7,7 +7,7 @@ from error_classifier.config import Settings
 from error_classifier.errors import UnauthorizedError
 
 
-def require_api_key(request: Request) -> None:
+async def require_api_key(request: Request) -> None:
     key = cast(Settings, request.app.state.settings).api_key
     if key is None:
         return

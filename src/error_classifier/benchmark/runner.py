@@ -229,9 +229,7 @@ class _Bench:
 
     async def get_ok(self, url: str) -> bool:
         try:
-            # The key goes to the API only, never to llama-server.
-            headers = self.api_headers if url.startswith(self.target.api_url) else {}
-            response = await self.http.get(url, headers=headers, timeout=PROBE_TIMEOUT_S)
+            response = await self.http.get(url, timeout=PROBE_TIMEOUT_S)
         except httpx.HTTPError:
             return False
         return response.status_code == 200
@@ -319,6 +317,7 @@ class _Bench:
             response = await self.http.post(
                 f"{self.target.api_url}/classify",
                 json={"message": text},
+                # Only this request carries the key: /ready is open, llama-server must not see it.
                 headers=self.api_headers,
                 timeout=self.client_timeout_s,
             )
