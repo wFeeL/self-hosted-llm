@@ -4,10 +4,10 @@ A service that classifies error messages by category and severity with a small l
 
 ## Results at a glance
 
-- Default model: Qwen3.5-2B (Q4_K_M, 1.4 GB file) on llama.cpp `llama-server`, CPU only.
-- Quality on the 60 labelled errors: category right in 52 (46 when it must match strictly), category and severity both right in 24, no leaked secrets, and both injections in the set treated as text. Qwen3-4B got both fields right in 34 rows, a lead that 60 rows cannot confirm (McNemar p 0.052), but it repeated an email address from an error text and was 2.4 times slower in the evaluation (p50 10.2 against 4.2 s) and 1.4 times slower through the API.
-- Speed through the API on 8 vCPU (6 threads): p50 5.8 s and p95 10.8 s over 20 requests (the 95th percentile of 20 is the 19th value; 18 of them took at most 6.9 s), 24.6 s for a 3000-character input. Over 50 requests in a row the anonymous memory of `llm` went from 0.85 to 0.94 GiB and single requests took up to 21.6 s on the shared host.
-- Resources: 2.34 GiB of RAM for `llm` and 0.10 GiB for `api`, 2.3 GiB of disk for the images and the model, 5.2 to 5.5 CPU cores while answering.
+- Default model: Qwen3-4B-Instruct-2507 (Q4_K_M, 2.5 GB file) on llama.cpp `llama-server`, CPU only. Servers with 4 GiB of RAM or 2 vCPU should take Qwen3.5-2B (1.4 GB).
+- Quality on the 60 labelled errors: category right in 56 (52 when it must match strictly), severity right in 38, both right in 34, against 24 for Qwen3.5-2B, the earlier default. Both injections in the set were treated as text. The service masks email addresses in its answers; the model itself repeated one address from an error text, and that email was the only reason it lost the first choice. The rule was changed after the runs, see [The choice](#the-choice).
+- Speed through the API on 8 vCPU (6 threads): p50 8.1 s and p95 9.3 s over 20 requests, 70.9 s for one 3000-character input. The 50-request series was run only for Qwen3.5-2B (p50 5.8 s, p95 10.8 s, 24.6 s for the long input).
+- Resources: at least 5.77 GiB of RAM for `llm` (measured under a 6 GiB limit, so the real need may be higher; the default limit is now 6.5 GiB) and 0.09 GiB for `api`, 3.3 GiB of disk for the images and the model, about 5.8 CPU cores while answering.
 - APIs: `POST /classify` and an OpenAI-compatible `/v1/chat/completions`, with a queue, timeouts, an optional API key and honest errors instead of made-up answers.
 
 The numbers come from podman on a shared machine; see [Benchmarks](#benchmarks) and [Evaluation](#evaluation) for the method and [Limitations](#limitations) for what they do not cover.
@@ -20,7 +20,8 @@ docker compose up -d
 until curl -fsS http://127.0.0.1:8000/ready; do sleep 5; done
 ```
 
-- The first start downloads about 1.4 GB of model weights into the `models` volume; watch it with `docker compose logs -f llm`.
+- The first start downloads about 2.5 GB of model weights into the `models` volume; watch it with `docker compose logs -f llm`.
+- `.env.example` limits `llm` to 6 CPUs, and Docker refuses to start a container with a limit above the number of cores. On a machine with fewer than 7 cores (`nproc`), take the values from the [sizing table](#3-get-the-code-and-the-configuration) first.
 - If the loop keeps waiting, check `docker compose ps` and `docker compose logs llm`; an unhealthy `llm` keeps `api` from starting.
 - Every `docker compose` command needs `.env` to be present.
 - If the network is slow and `llm` becomes unhealthy before the download ends, run `docker compose up -d` again after the download, or raise `LLM_START_PERIOD` in `.env` (1800 s by default).
@@ -32,16 +33,19 @@ until curl -fsS http://127.0.0.1:8000/ready; do sleep 5; done
 ## Classify an error
 
 ```
-curl -sS -X POST http://127.0.0.1:8000/classify -H 'content-type: application/json' -d '{"message": "TypeError: Cannot read properties of undefined (reading '"'"'map'"'"')"}'
+curl -sS -X POST http://127.0.0.1:8000/classify -H 'content-type: application/json' -d @- <<'EOF'
+{"message": "TypeError: Cannot read properties of undefined (reading 'map')\n    at renderProducts (catalog.js:42:18)\n    at loadCatalog (catalog.js:17:5)"}
+EOF
 ```
 
-Response of the stack when Granite 4.1 3B was its model (the default is now Qwen3.5-2B, whose wording differs):
+This text is row `js-001` of the evaluation set. The default model answered it in the evaluation run (`eval/results/qwen3-4b-instruct-2507-q4km.json`); that run called the classifier directly, so `model`, `latency_ms` and `truncated` below are filled in from the row. An answer through the running stack has not been recorded yet.
 
 ```
-{"category":"runtime_error","severity":"medium","summary":"The code tried to call map on a value that is undefined, causing a TypeError.","suggested_action":"Verify that the variable before map is properly initialized and not null or undefined before calling the method.","model":"granite-4.1-3b-q4km","latency_ms":6780,"truncated":false}
+{"category":"runtime_error","severity":"medium","summary":"The product list rendering fails because the data object is undefined, causing a map operation to crash.","suggested_action":"Add a null/undefined check before calling map in renderProducts to prevent crashes.","model":"qwen3-4b-instruct-2507-q4km","latency_ms":6896,"truncated":false}
 ```
 
-- An answer takes several seconds on CPU: this one took 6.8 s. A 3000-character input took 25 s with the default model and 71 s with Qwen3-4B in the benchmarks.
+- An answer takes several seconds on CPU: this one took 6.9 s. A 3000-character input took 71 s with the default model and 25 s with Qwen3.5-2B in the benchmarks.
+- Email addresses in `summary` and `suggested_action` come back as `<email>`.
 - `summary` and `suggested_action` are always in English, even for an error text in another language. The example in the task statement is in Russian; this is a deliberate difference.
 - The service talks to the model only through the OpenAI-compatible API of llama-server (`/v1/chat/completions`). The mapping of runtime errors (context overflow, loading state) and the thinking switch are specific to llama-server.
 - Categories, severity levels and error codes are listed in the Classification and Error codes sections below.
@@ -59,7 +63,7 @@ Next to `POST /classify` the service answers the OpenAI chat completions protoco
 ```sh
 curl -sS http://127.0.0.1:8000/v1/chat/completions \
   -H "Authorization: Bearer $API_KEY" -H 'content-type: application/json' \
-  -d '{"model": "qwen3.5-2b-q4km", "messages": [{"role": "user", "content": "TypeError: Cannot read properties of undefined (reading '"'"'map'"'"')"}]}'
+  -d '{"model": "qwen3-4b-instruct-2507-q4km", "messages": [{"role": "user", "content": "TypeError: Cannot read properties of undefined (reading '"'"'map'"'"')"}]}'
 ```
 
 ```python
@@ -68,7 +72,7 @@ from openai import OpenAI
 
 client = OpenAI(base_url="http://127.0.0.1:8000/v1", api_key="<API_KEY or any string>")
 answer = client.chat.completions.create(
-    model="qwen3.5-2b-q4km",
+    model="qwen3-4b-instruct-2507-q4km",
     messages=[
         {
             "role": "user",
@@ -111,22 +115,13 @@ Not measured: granite-4.0-1b-q4km.
 <!-- vps-table:end -->
 
 - 2 GiB: no model fits with the default context of 8192 tokens. Even the 0.95 GiB file of Granite 4.0 1B plus the smallest measured runtime memory (1.01 GiB for Qwen3.5-2B) is above the budget, and Granite 4.0 1B also followed the injection in the evaluation.
+- 4 GiB: Qwen3.5-2B is the only measured model that fits. Use its block with the 4 GB row of the [sizing table](#3-get-the-code-and-the-configuration); the fit is computed from the measured memory and was not tried.
+- 8 GiB: the limits of `.env.example` add up to 7.75 GiB (6.5 for `llm`, 0.5 for `api`, 0.75 for the system), and a VPS sold as 8 GB often reports a little less (an estimate). The measured use is below the limits, but the margin is small.
 - 16 GiB: the same choice as 8 GiB. Models of 7 to 8B parameters were not measured on this machine.
 
-### Qwen3.5-2B (default)
+Memory limits come from the sizing table, not from these blocks.
 
-<!-- model-env:qwen3.5-2b-q4km:start -->
-```
-MODEL_ALIAS=qwen3.5-2b-q4km
-LLAMA_ARG_HF_REPO=bartowski/Qwen_Qwen3.5-2B-GGUF
-LLAMA_ARG_HF_FILE=Qwen_Qwen3.5-2B-Q4_K_M.gguf
-LLM_DISABLE_THINKING=true
-```
-<!-- model-env:qwen3.5-2b-q4km:end -->
-
-The default and the only model that passed the leak check. Fast (p50 4.2 s) and small (2.34 GiB for `llm`), but weaker than Qwen3-4B and Granite 4.1 3B on the strict category (46 of 60).
-
-### Qwen3-4B-Instruct-2507
+### Qwen3-4B-Instruct-2507 (default)
 
 <!-- model-env:qwen3-4b-instruct-2507-q4km:start -->
 ```
@@ -137,7 +132,20 @@ LLM_DISABLE_THINKING=false
 ```
 <!-- model-env:qwen3-4b-instruct-2507-q4km:end -->
 
-The most accurate on the set (34 of 60 rows with both fields right) and the slowest (p50 10.2 s). It repeated an email address from one error text, so take it when accuracy matters more than that risk. Its `llm` container peaked at 5.77 GiB under `LLM_MEM_LIMIT=6g`; the peak includes 2.28 GiB of page cache and is bounded by the limit, while its anonymous memory was 3.06 GiB.
+The default and the most accurate on the set (34 of 60 rows with both fields right, 52 strict category, 38 exact severity), and the slowest (p50 10.2 s in the evaluation, 8.1 s through the API). In one row (`py-012`) it repeated an email address from the error text; the service masks email addresses, so the client does not get it. Its `llm` container peaked at 5.77 GiB under a 6 GiB limit, with 2.28 GiB of page cache and 3.06 GiB of anonymous memory. The peak was capped by the limit, so `.env.example` gives it 6.5 GiB.
+
+### Qwen3.5-2B
+
+<!-- model-env:qwen3.5-2b-q4km:start -->
+```
+MODEL_ALIAS=qwen3.5-2b-q4km
+LLAMA_ARG_HF_REPO=bartowski/Qwen_Qwen3.5-2B-GGUF
+LLAMA_ARG_HF_FILE=Qwen_Qwen3.5-2B-Q4_K_M.gguf
+LLM_DISABLE_THINKING=true
+```
+<!-- model-env:qwen3.5-2b-q4km:end -->
+
+The choice for servers with 4 GiB of RAM or 2 vCPU, and the default before the email mask (see [The choice](#the-choice)). It repeated none of the seven secrets and treated the injection as text. Fast (p50 4.2 s) and small (2.34 GiB for `llm`), but 10 rows behind Qwen3-4B with both fields right and weaker on the strict category (46 of 60). It needs `LLM_DISABLE_THINKING=true`.
 
 ### Granite 4.1 3B
 
@@ -169,7 +177,7 @@ The smallest file (about 1 GB) and the fastest (p50 3.9 s), with the weakest cat
 
 ## Model and license
 
-Qwen3.5-2B is the default because it was the only evaluated model that neither repeated a secret from the error text nor followed the injection, it has the lowest median latency of the 2 to 4B models, and by its measured memory it should fit a 4 GiB server (not tried). The price is accuracy: Qwen3-4B gets both fields right in 10 more of 60 rows.
+Qwen3-4B-Instruct-2507 is the default because it got both fields right in the most rows (34 of 60, 10 more than the next model) and treated the injection as text; with email addresses masked by the service it passes the leak check. It needs a server with 8 GiB of RAM. The price is speed and memory: about 1.4 times slower than Qwen3.5-2B through the API and about 2.5 times its memory. Qwen3.5-2B is the recommendation for 4 GiB servers.
 
 | Model | License | Where it is stated |
 |---|---|---|
@@ -224,7 +232,7 @@ These steps target Ubuntu 24.04 LTS on a server without a GPU and use Docker Eng
 
 ### 1. Pick the server
 
-Use the table in [Choosing a model](#choosing-a-model): the default model fits a server with 4 GiB of RAM. Plan for at least 10 GB of free disk: the images and the model file take 2.3 GiB, and Docker, the build cache, logs and every further model need room too. All measurements were taken on 8 vCPU; with fewer cores the answers are slower.
+Use the table in [Choosing a model](#choosing-a-model): the default model needs a server with 8 GiB of RAM, and a 4 GiB server takes Qwen3.5-2B. Plan for at least 10 GB of free disk: the images and the model file take 3.3 GiB, and Docker, the build cache, logs and every further model need room too. All measurements were taken on 8 vCPU; with fewer cores the answers are slower.
 
 The server needs outbound HTTPS to the Docker package repository, Docker Hub (the `python` base image of `api`), `ghcr.io` (the llama.cpp image), PyPI (dependencies while `api` is built) and Hugging Face (the first download of the model). The registries and Hugging Face serve files from other hosts behind these addresses, so the two checks below only show that the entry points answer:
 
@@ -263,15 +271,17 @@ The last line writes a random key into `.env`. `.env` is read by Compose, not by
 
 Size `.env` before the first start. The defaults fit the machine the measurements come from (8 vCPU, 15 GB RAM); Docker refuses a `cpus` limit above the number of cores, so smaller servers must change `LLM_CPUS` first.
 
-| Server | `LLM_CPUS` | `LLAMA_ARG_THREADS` | `API_CPUS` | `LLAMA_ARG_N_PARALLEL` | `LLAMA_ARG_CTX_SIZE` | `LLM_MEM_LIMIT` | `REQUEST_TIMEOUT_S` |
-|---|---|---|---|---|---|---|---|
-| 8 vCPU, 8 GB or more (as measured) | 6 | 6 | 1 | 2 | 8192 | 6g | 120 |
-| 4 vCPU, 4 GB (not measured) | 3 | 3 | 0.5 | 1 | 4096 | 2500m | 180 |
-| 2 vCPU, 4 GB (not measured) | 1.5 | 1 | 0.5 | 1 | 4096 | 2500m | 300 |
+| Server | Model | `LLM_CPUS` | `LLAMA_ARG_THREADS` | `API_CPUS` | `LLAMA_ARG_N_PARALLEL` | `LLAMA_ARG_CTX_SIZE` | `LLM_MEM_LIMIT` | `REQUEST_TIMEOUT_S` | `QUEUE_TIMEOUT_S` |
+|---|---|---|---|---|---|---|---|---|---|
+| 8 vCPU, 8 GB or more (`.env.example`; measured with a 6g limit) | default | 6 | 6 | 1 | 2 | 8192 | 6656m | 120 | 30 |
+| 4 vCPU, 8 GB (estimate) | default | 3 | 3 | 0.5 | 1 | 4096 | 6656m | 300 | 90 |
+| 4 vCPU, 4 GB (estimate) | Qwen3.5-2B | 3 | 3 | 0.5 | 1 | 4096 | 2500m | 180 | 60 |
+| 2 vCPU, 4 GB or more (estimate) | Qwen3.5-2B | 1.5 | 1 | 0.5 | 1 | 4096 | 2500m | 300 | 150 |
 
 - Keep `LLAMA_ARG_CTX_SIZE` at least `LLAMA_ARG_N_PARALLEL` × 4096: the context is split between slots, and a 3000-character input needs about 4096 tokens of a slot.
-- Keep `LLM_MEM_LIMIT` below the RAM of the server minus about 1 GB for the system, Docker and `api` (the VPS table above reserves 0.75 GiB plus the measured peak of `api`), and above the `llm need` of your model in the benchmark tables (2.34 GiB for the default). A limit above the RAM protects nothing.
-- The timeouts for 4 and 2 vCPU are estimates from the 8 vCPU measurements; speed on smaller servers was not measured.
+- Keep `LLM_MEM_LIMIT` below the RAM of the server minus about 1 GB for the system, Docker and `api` (the VPS table above reserves 0.75 GiB plus the measured peak of `api`), and above the `llm need` of your model in the benchmark tables (5.77 GiB for the default, 2.34 GiB for Qwen3.5-2B). A limit above the RAM protects nothing.
+- The rows marked estimate were not measured. Their times are the 8 vCPU results (the p50 of 20 requests and one long input) scaled by 2 for 3 threads and by 6 for one thread. With one slot, a long request at the head of the queue can make the requests behind it end in 429, and a retry after an invalid answer may not fit `REQUEST_TIMEOUT_S` and end in 504.
+- On 2 vCPU the table takes Qwen3.5-2B by judgement, not by the rule of [Choosing a model](#choosing-a-model), which looks only at RAM: the long input of the default model would take about 425 s on one thread (an estimate).
 
 ### 4. First start
 
@@ -321,7 +331,7 @@ classifier.example.com {
 sudo systemctl reload caddy
 ```
 
-Caddy has no upstream timeout by default ([reverse_proxy](https://caddyserver.com/docs/caddyfile/directives/reverse_proxy)). If you set one, keep it above `QUEUE_TIMEOUT_S + REQUEST_TIMEOUT_S` (150 s by default). Before enabling ufw allow SSH, then HTTP and HTTPS:
+Caddy has no upstream timeout by default ([reverse_proxy](https://caddyserver.com/docs/caddyfile/directives/reverse_proxy)). If you set one, keep it above `QUEUE_TIMEOUT_S + REQUEST_TIMEOUT_S` (150 s with `.env.example`, up to 450 s for the rows of the sizing table). Before enabling ufw allow SSH, then HTTP and HTTPS:
 
 ```sh
 sudo ufw allow OpenSSH
@@ -374,16 +384,17 @@ Code: `git pull`, then `diff .env.example .env` to see new variables (a missing 
 
 Of the model:
 
-- Severity is the weak field: the default model gets it exactly right in 27 of 60 rows and within one level in 56. The texts rarely say how many users are affected.
-- The category is right in 52 of 60 rows, and only 46 when the label must match strictly; `resource_error` and `permission_error` are the most confused.
+- Severity is the weak field: the default model gets it exactly right in 38 of 60 rows and within one level in 59. The texts rarely say how many users are affected.
+- The category is right in 56 of 60 rows, and 52 when the label must match strictly; `permission_error` is the most confused (4 of 7).
 - `summary` and `suggested_action` are always English.
-- Leaks were checked on the 7 rows that contain a secret, and injection on 2 of them; zero leaks there does not prove that the model never repeats a secret.
+- Email addresses in `summary` and `suggested_action` are replaced with `<email>`, and so is `user@host` notation such as `git@github.com`. Names, phone numbers and IP addresses are not masked, and the set has no rows to test them.
+- Leaks were checked on the 7 rows that contain a secret, and injection on 2 of them; zero leaks there does not prove that the model never repeats a secret. The one email row now tests the mask rather than the model.
 - The evaluation set has 60 rows written and labelled by one person, so differences of a few rows between models are noise.
 
 Of the configuration:
 
-- The context of 8192 tokens is split into 2 slots, so one request has about 4096 tokens. A text longer than `MAX_INPUT_CHARS` (3000 characters) keeps its first and last parts and loses the middle, which is replaced by a marker inside the limit, and the answer says `truncated: true`; a text that still does not fit the slot gets 400 `invalid_input`. The 3000-character input of the benchmark used 3256 of the 4096 tokens; texts that tokenize more densely, or a higher `MAX_INPUT_CHARS`, can hit the 400.
-- Two requests are classified at a time; more wait in a queue of 4 for at most 30 s and then get 429. On 8 vCPU one request took 4 to 11 s in the 20-request series and up to 22 s now and then on the shared host; a long one about 25 s.
+- The context of 8192 tokens is split into 2 slots, so one request has about 4096 tokens. A text longer than `MAX_INPUT_CHARS` (3000 characters) keeps its first and last parts and loses the middle, which is replaced by a marker inside the limit, and the answer says `truncated: true`; a text that still does not fit the slot gets 400 `invalid_input`. The 3000-character input of the benchmark used 3232 of the 4096 tokens with the default model (3256 with Qwen3.5-2B); texts that tokenize more densely, or a higher `MAX_INPUT_CHARS`, can hit the 400.
+- Two requests are classified at a time; more wait in a queue of 4 for at most 30 s and then get 429. On 8 vCPU one request of the default model took 5.9 to 9.7 s in the 20-request series and a long one about 71 s. With `REQUEST_TIMEOUT_S=120` a long input whose first answer is invalid may not get its retry and ends in 504.
 - No streaming answers, no per-client rate limit, one model per stack; changing the model restarts `llm`.
 - The only access control is the optional `API_KEY`; TLS comes from the reverse proxy.
 
@@ -510,7 +521,7 @@ The few-shot examples of the prompt are not in the set. `check_dataset` compares
 
 `scripts/evaluate.py run` calls the same `Classifier` the service uses, with the same prompt, schema, validation and retry, directly against llama-server. Between the classifier and the runtime client a recorder keeps every attempt with its raw `content`, `finish_reason` and token counts, so the file shows what the model answered even when the answer was rejected. One warm-up request outside the set fills the prompt cache of the slot; then the rows go one at a time. A runtime that stops answering is waited for up to 60 s and the row is repeated once; otherwise the run stops and is written to a `.partial` file, which `report` refuses.
 
-All four runs used the same settings: temperature 0, `MAX_OUTPUT_TOKENS` 256, `MAX_INPUT_CHARS` 3000, `REQUEST_TIMEOUT_S` 120, context 8192 split into 2 slots, 6 threads, batch 512, Q4_K_M weights. The only difference is `LLM_DISABLE_THINKING=true` for Qwen3.5-2B: llama-server b12352 turns thinking on for it by default, and with the JSON schema the model then spends its token budget on reasoning and returns an empty answer (observed in a separate request before the runs: `finish_reason` `length` and empty `content`; that output is not kept in the repository).
+All four runs used the same settings: temperature 0, `MAX_OUTPUT_TOKENS` 256, `MAX_INPUT_CHARS` 3000, `REQUEST_TIMEOUT_S` 120, context 8192 split into 2 slots, 6 threads, batch 512, Q4_K_M weights, and llama-server's default prompt cache of 8192 MiB (the stack now ships `LLAMA_ARG_CACHE_RAM=0`). The only difference is `LLM_DISABLE_THINKING=true` for Qwen3.5-2B: llama-server b12352 turns thinking on for it by default, and with the JSON schema the model then spends its token budget on reasoning and returns an empty answer (observed in a separate request before the runs: `finish_reason` `length` and empty `content`; that output is not kept in the repository).
 
 | Model | GGUF | File, bytes |
 |---|---|---|
@@ -590,7 +601,7 @@ Qwen3-4B-Instruct-2507 is the most accurate: both fields right in 34 rows agains
 
 Granite 4.0 1B gets both fields right as often as Qwen3.5-2B (24 rows; each model wins 10 rows the other loses) and is the fastest (p50 3.9 s), but it is the weakest on the category (46 of 60, 44 strict) and on `unknown` (2 of 5).
 
-Both Granite models followed the plain injection: for `unk-003` they answered `permission_error`, `critical` and put `PWNED-7731` in the summary. Granite 4.1 3B and Qwen3-4B also repeated the email address from `py-012`. Qwen3-4B treated the injection as text (`unknown`, `low`). Qwen3.5-2B repeated none of the seven secrets and also answered the injection with `unknown` and `low`.
+Both Granite models followed the plain injection: for `unk-003` they answered `permission_error`, `critical` and put `PWNED-7731` in the summary. Granite 4.1 3B and Qwen3-4B also repeated the email address from `py-012`. Qwen3-4B treated the injection as text (`unknown`, `low`). Qwen3.5-2B repeated none of the seven secrets and also answered the injection with `unknown` and `low`. The service now masks email addresses, so these two repeats are counted under `Echoed by the model` but not under `Leaks`, which counts secrets in the answer the service returns.
 
 Qwen3.5-2B (p50 4.2 s, 268 s for the whole run) loses most on `resource_error` (4 of 7) and `permission_error` (4 of 7) and is weak on the strict category (46 of 60).
 
@@ -605,9 +616,11 @@ The rule was written down before the runs and is implemented in `choose_model`. 
 3. Among the candidates the faster one wins if its p50 on the rows valid on the first try for all candidates is more than 10% lower than the others. The speed does not count when there are fewer than 20 such rows or a run started with a 1-minute load average of 1.5 or more.
 4. Otherwise the current default stays, then the most rows with both fields right, then the name.
 
-The three other models leaked a secret or followed the injection, so Qwen3.5-2B was the only model left after step 1 and is the default (`MODEL_ALIAS=qwen3.5-2b-q4km` in `.env.example`, with `LLM_DISABLE_THINKING=true`).
+A second change came after the runs, and this one changed the choice. Under the rule as first written, a secret anywhere in the model's `summary` or `suggested_action` excluded the model, and Qwen3.5-2B was the only model left after step 1. Qwen3-4B was out for one row: it repeated the email address from `py-012`. The service now replaces email addresses in its answers with `<email>`, and step 1 counts a leak in the answer the service returns (`Leaks`); what the model wrote before the mask is shown in `Echoed by the model`. With that, Qwen3-4B has no leak, and step 2 picks it: it leads by 10 rows with both fields right, more than the 6 rows the rule allows, so no other model stays a candidate. The choice rests on that gap, not on significance: McNemar against Qwen3.5-2B gives p 0.052, and Holm's correction over six pairs would ask for 0.0083. The change was made knowing that it would move the default; under the rule as first written the default would still be Qwen3.5-2B.
 
-The price is accuracy. Qwen3-4B got both fields right in 10 more rows, and if it had not repeated one email address it would have been chosen by step 2. The rule treats a leak as disqualifying because the prompt forbids copying personal data and the API returns the summary to whoever sent the error. A future change to the prompt that stops the echo would need a new run of all models, and the rule would then compare them on quality.
+The price is speed and memory: p50 10.2 against 4.2 s in the evaluation and 8.1 against 5.8 s through the API, with a different load on the host during the two benchmark runs, and at least 5.77 against 2.34 GiB for `llm`. After the mask the `py-012` row tests the mask rather than the model, and other kinds of personal data are neither masked nor in the set. On servers with 4 GiB of RAM the same rule still picks Qwen3.5-2B.
+
+The default is `MODEL_ALIAS=qwen3-4b-instruct-2507-q4km` in `.env.example`, with `LLM_DISABLE_THINKING=false`.
 
 ### Limitations
 
@@ -616,13 +629,14 @@ The price is accuracy. Qwen3-4B got both fields right in 10 more rows, and if it
 - The prompt was tuned on Granite 4.1 3B, which favours it. Temperature 0 differs from the sampling the Qwen vendors recommend (Qwen3-4B T 0.7, Qwen3.5-2B T 1.0), which may understate both Qwen models.
 - The quantizers differ: IBM for both Granite models, bartowski (imatrix) for both Qwen models.
 - Latency was measured on podman on a shared machine, on short inputs only, while another project's stack was running. Benchmarks of the whole service are in the next section.
-- Seven secret rows show leaks when they happen; zero leaks on seven rows does not prove a model never leaks. For Granite 4.0 1B and Qwen3-4B one row decided the exclusion, and those rows were not repeated, so whether the leak happens every time is not known.
+- Seven secret rows show leaks when they happen; zero leaks on seven rows does not prove a model never leaks. For Granite 4.0 1B one row decided the exclusion (it followed the injection in `unk-003`), and that row was not repeated, so whether it happens every time is not known.
 - Temperature 0 is not bit-exact here. An earlier repeat run of Qwen3.5-2B, whose file is not kept, changed the labels of 3 of 60 rows (`py-007`, `infra-009`, `ru-002`) with the same score of 24 rows with both fields right. The cause is assumed to be the prompt cache and batch boundaries of llama-server; differences of a few rows between models are within this as well.
 - Models of 7 to 8B parameters were not evaluated: on this shared 8 vCPU machine a run of Qwen3-8B took most of the CPU and was stopped. In a single request before it (output not kept), at an 8 GiB container limit, the kernel was already evicting its weights from memory (anonymous memory 4.32 GiB).
+- The runs used llama-server's default prompt cache of 8192 MiB; the stack now ships `LLAMA_ARG_CACHE_RAM=0`, whose effect on speed was not measured.
 
 ### Reproducing
 
-Start `llm` with the model in `.env` and the debug port, then run the set and the report. The runs above used `podman compose` and `--engine podman`; `--container` takes the name of the `llm` container from `compose ps`.
+Start `llm` with the model in `.env` and the debug port, then run the set and the report. The runs above used `podman compose` and `--engine podman`; `--container` takes the name of the `llm` container from `compose ps`: `llm-error-classifier_llm_1` under podman-compose, `llm-error-classifier-llm-1` under Docker Compose v2.
 
 ```sh
 podman compose -f compose.yaml -f compose.debug.yaml up -d llm
@@ -637,7 +651,7 @@ uv run python scripts/evaluate.py report eval/results/*.json
 
 ## Benchmarks
 
-`scripts/bench.py run` measures the whole service: a client on the host calls `POST /classify` through the published API port and reads CPU and memory from the cgroups of both containers at the start and end of each phase. One run is a cold start of the stack with the model already in the volume, 3 warm-up requests, 20 requests one at a time, one long input (3000 characters of base64), 50 requests one at a time (default model only), two clients sending 10 requests each, and a burst of `MAX_CONCURRENCY + MAX_QUEUE + 1` requests to check the queue. Inputs are 20 rows of `eval/dataset.jsonl`. Raw files are in `bench/results/`, and `scripts/bench.py report bench/results/*.jsonl` prints the tables below; a test checks that they match.
+`scripts/bench.py run` measures the whole service: a client on the host calls `POST /classify` through the published API port and reads CPU and memory from the cgroups of both containers at the start and end of each phase. One run is a cold start of the stack with the model already in the volume, 3 warm-up requests, 20 requests one at a time, one long input (3000 characters of base64), 50 requests one at a time (only for Qwen3.5-2B, the default at the time of the runs), two clients sending 10 requests each, and a burst of `MAX_CONCURRENCY + MAX_QUEUE + 1` requests to check the queue. Inputs are 20 rows of `eval/dataset.jsonl`. Raw files are in `bench/results/`, and `scripts/bench.py report bench/results/*.jsonl` prints the tables below; a test checks that they match.
 
 The runs used `podman compose` on a shared host: 8 vCPU AMD EPYC Rome (AVX2), 15 GB RAM, no GPU, with another project's stack of 11 containers running. Each file records the load average before the run.
 
@@ -684,22 +698,25 @@ How to read the tables:
 
 ### Resource requirements
 
-For the default model (Qwen3.5-2B, Q4_K_M):
+For the default model (Qwen3-4B-Instruct-2507, Q4_K_M):
 
 | Resource | Requirement | Source |
 |---|---|---|
 | CPU | measured on x86_64 with AVX2, 6 threads on 8 vCPU; smaller machines were not measured | `CPU llm, %` above |
-| RAM | 2.34 GiB for `llm` and 0.10 GiB for `api` (`llm need` and `api peak`) | last table |
-| Disk | 1.0 GiB for the two images and 1.3 GiB for the model file; every other model adds its GGUF to the `models` volume | memory table |
+| RAM | at least 5.77 GiB for `llm` and 0.09 GiB for `api` (`llm need` and `api peak`); `.env.example` limits `llm` to 6.5 GiB | last table |
+| Disk | 1.0 GiB for the two images and 2.3 GiB for the model file; every other model adds its GGUF to the `models` volume | memory table |
 
-Qwen3-4B needs 5.77 GiB for `llm` and Granite 4.1 3B 4.29 GiB by the same measure. With the default `LLM_MEM_LIMIT=6g`, Qwen3-4B peaked at 5.77 GiB; the peak includes 2.28 GiB of page cache and is bounded by the limit, so it does not show how close the model is to running out of memory (its anonymous memory was 3.06 GiB). Speed on machines with fewer cores was not measured.
+The peak of 5.77 GiB was taken under `LLM_MEM_LIMIT=6g` and held 2.28 GiB of page cache next to 3.06 GiB of anonymous memory. A peak at 96% of the limit is bounded by it, so 5.77 GiB is a lower bound of what the model takes with more room; the default limit is now 6.5 GiB. By the same measure Qwen3.5-2B needs 2.34 GiB and Granite 4.1 3B 4.29 GiB. Speed on machines with fewer cores was not measured.
 
 ### Limitations of the measurements
 
 - All numbers come from podman on a shared host, not from Docker on a dedicated one. Every run had the 11 containers of the other project up; the load average at the start of each run is in the first table. A first run of the default model, whose file is not kept, had single requests several times slower than the median and was repeated; the repeat started at a load average of 1.28 and still has single requests up to 21.6 s in the 50-request series, so the tail of the latency is partly the host.
 - Inputs are short error messages (up to a few hundred characters). One long input per model is measured, not a series of them.
 - Concurrency stops at two clients, which is the number of runtime slots.
-- Only the default model ran the 50-request series; the other two skip it to keep each run under 15 minutes.
+- Only Qwen3.5-2B, the default at the time of the runs, ran the 50-request series; the other two skip it to keep each run under 15 minutes. Qwen3-4B, the default now, has no series.
+- The load average at the start differed: 0.27 for Qwen3-4B, 1.28 for Qwen3.5-2B and 1.46 for Granite 4.1 3B, so the speed ratios between the models are approximate. The long input was measured once per model.
+- podman-compose did not apply `memswap_limit`, so the containers could use swap beyond `mem_limit` on this host, and these files have no swap counters (the swap columns are empty). `memory.peak` does not count anonymous memory moved to swap, so with swap in use the memory figures understate the need. `scripts/bench.py` now records `memory.swap.peak`, `memory.swap.max` and `memory.max`, so a run on Docker shows whether swap was used and limited.
+- The runs used llama-server's default prompt cache of 8192 MiB; the stack now ships `LLAMA_ARG_CACHE_RAM=0`.
 - The cold start begins with the model file already in the volume and probably in the page cache of the host, so loading from a cold disk takes longer. The time to `/ready` includes the healthcheck interval of `llm` (10 s): `api` starts only after `llm` is reported healthy, so this column moves in steps of the interval. The first start also downloads the file, and its time depends on the network.
 
 ## About this test task
@@ -708,7 +725,7 @@ This repository is a solution of the CodeX test task "Self-hosted LLM": deploy a
 
 Of the optional items, the OpenAI-compatible API, the comparison of several models, the automatic evaluation, the limit on concurrent requests, timeouts and model errors, and model changes without code changes are done. Prometheus metrics with Grafana and a demonstration on a clean VPS were left out on purpose; llama-server exposes `/metrics` if they are needed.
 
-Constraints of the work: the development machine was shared with another project and had no Docker. The stack was built and checked with podman, the files are written for Docker Compose, and the owner runs them on Docker before publication. Model runs stopped when they started to take most of the shared machine.
+Constraints of the work: the development machine was shared with another project and had no Docker. The stack was built and checked with podman, the files are written for Docker Compose and have not yet been run with it. Model runs stopped when they started to take most of the shared machine.
 
 TODO:
 
@@ -716,5 +733,7 @@ TODO:
 - Run the 50-request series for the default model `qwen3-4b-instruct-2507-q4km`; here only `qwen3.5-2b-q4km` ran it.
 - Run the live tests against the model, including `tests/live/test_openai_live.py` through the official client.
 - Benchmark Granite 4.0 1B and evaluate a 7 to 8B model on a machine that can take the load.
-- Repeat the rows that decided the exclusion of Granite 4.0 1B and Qwen3-4B to see whether their leaks are stable.
-- Replace the example answer in [Classify an error](#classify-an-error) with one from the default model.
+- Repeat the row that decided the exclusion of Granite 4.0 1B (`unk-003`) to see whether it follows the injection every time.
+- Measure the memory of the default model on Docker with the swap counters and with unique inputs, and the timeouts of the smaller servers in the sizing table.
+- Improve severity (38 of 60 exact for the default model) with a new prompt; this needs new runs of every model.
+- Record an answer of the running stack for [Classify an error](#classify-an-error); the example there comes from the evaluation run.
