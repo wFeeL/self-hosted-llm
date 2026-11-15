@@ -482,7 +482,8 @@ Every error has the shape `{"error": {"code": "...", "message": "...", "type": "
 
 | code | HTTP | meaning |
 |---|---|---|
-| invalid_input | 400 | The body is too large or not valid, `message` is missing, not a string or empty, or the text does not fit the model context |
+| invalid_input | 400 | The body is not valid, `message` is missing, not a string or empty, or the text does not fit the model context |
+| request_too_large | 413 | The request body is larger than `MAX_REQUEST_BYTES` |
 | model_output_invalid | 502 | The model returned an invalid answer twice |
 | llm_bad_response | 502 | The runtime rejected the request or answered in an unexpected shape |
 | llm_timeout | 504 | The model did not finish within `REQUEST_TIMEOUT_S`, or the deadline left no time for a retry after an invalid answer |

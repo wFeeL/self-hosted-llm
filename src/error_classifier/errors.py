@@ -27,6 +27,11 @@ class InvalidInputError(ServiceError):
     status_code = 400
 
 
+class RequestTooLargeError(ServiceError):
+    code = "request_too_large"
+    status_code = 413
+
+
 class ModelNotFoundError(ServiceError):
     code = "model_not_found"
     status_code = 404

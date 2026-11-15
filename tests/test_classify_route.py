@@ -190,8 +190,10 @@ async def test_body_too_large_with_content_length(
     body = b'{"message": "' + b"a" * 3000 + b'"}'
     async with serve(create_app(_small_body_settings())) as client:
         response = await client.post("/classify", content=body)
-    assert response.status_code == 400
-    assert response.json() == _error_body("invalid_input", "Request body is larger than 2500 bytes")
+    assert response.status_code == 413
+    assert response.json() == _error_body(
+        "request_too_large", "Request body is larger than 2500 bytes"
+    )
     assert route.call_count == 0
 
 
@@ -212,8 +214,10 @@ async def test_body_too_large_streamed(respx_mock: respx.MockRouter, serve: Serv
     finally:
         await stream.aclose()
     assert "content-length" not in response.request.headers
-    assert response.status_code == 400
-    assert response.json() == _error_body("invalid_input", "Request body is larger than 2500 bytes")
+    assert response.status_code == 413
+    assert response.json() == _error_body(
+        "request_too_large", "Request body is larger than 2500 bytes"
+    )
     assert route.call_count == 0
 
 

@@ -7,6 +7,7 @@ from error_classifier.errors import (
     LlmUnavailableError,
     ModelOutputInvalidError,
     QueueFullError,
+    RequestTooLargeError,
     ServiceError,
     error_body,
 )
@@ -16,6 +17,7 @@ from error_classifier.errors import (
     ("cls", "code", "status"),
     [
         (InvalidInputError, "invalid_input", 400),
+        (RequestTooLargeError, "request_too_large", 413),
         (ModelOutputInvalidError, "model_output_invalid", 502),
         (LlmBadResponseError, "llm_bad_response", 502),
         (LlmTimeoutError, "llm_timeout", 504),

@@ -48,9 +48,27 @@ def _error_classes() -> list[type[ServiceError]]:
     return list(ServiceError.__subclasses__())
 
 
+def _coded_subclasses(cls: type[ServiceError]) -> list[type[ServiceError]]:
+    found: list[type[ServiceError]] = []
+    for sub in cls.__subclasses__():
+        if "code" in sub.__dict__:
+            found.append(sub)
+        found.extend(_coded_subclasses(sub))
+    return found
+
+
 @pytest.mark.parametrize("cls", [ServiceError, *_error_classes()], ids=lambda c: c.__name__)
 def test_error_code_row(cls: type[ServiceError]) -> None:
     assert f"| {cls.code} | {cls.status_code} |" in README
+
+
+def test_every_error_code_is_documented() -> None:
+    classes = _coded_subclasses(ServiceError)
+    assert classes
+    rows = README.splitlines()
+    for cls in classes:
+        prefix = f"| {cls.code} | {cls.status_code} |"
+        assert any(row.startswith(prefix) for row in rows), cls.__name__
 
 
 @pytest.mark.parametrize("name", SETTINGS_VARIABLES)
