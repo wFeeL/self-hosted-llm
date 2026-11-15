@@ -77,7 +77,7 @@ How requests are read:
 - Parameters that would change the shape of the answer are refused with 400 and the name in `param`: `stream: true`, `n` above 1, `tools`, `tool_choice` other than `none`, `functions`, `function_call`, `logprobs: true`, `top_logprobs`, `response_format` of type `json_schema`, `audio`, and `modalities` other than `text`. Explicit `null` and empty lists pass.
 - The answer has `usage` when the runtime reported both token counts, and two extra fields, `truncated` and `latency_ms`, as in `/classify`.
 
-Errors use the OpenAI shape, `{"error": {"code", "message", "type", "param"}}`, with the same codes and HTTP statuses as `/classify`, so the client raises `BadRequestError`, `AuthenticationError`, `NotFoundError`, `RateLimitError` or `InternalServerError`. Answers 500, 502 and 504 carry `x-should-retry: false`, because the service has already retried the model once and a 504 means another `REQUEST_TIMEOUT_S` of waiting; the client honours it. 429 and 503 stay retryable: with the defaults (`max_retries=2`, `QUEUE_TIMEOUT_S=30`) a client facing a full queue waits about 150 s before it gets `RateLimitError`. The `openai` 3.51 client waits for `Retry-After` only up to 120 s and does not retry above that, so with `QUEUE_TIMEOUT_S` over 120 a full queue fails at once; set `max_retries` in the client to what suits you.
+Errors use the OpenAI shape, `{"error": {"code", "message", "type", "param"}}`, with the same codes and HTTP statuses as `/classify`, so the client raises `BadRequestError`, `AuthenticationError`, `NotFoundError`, `RateLimitError` or `InternalServerError`. Answers 500, 502 and 504 carry `x-should-retry: false` and the client honours it: after `model_output_invalid` the service has already asked the model twice, `llm_bad_response` and `internal_error` would fail the same way again, and a 504 would mean another `REQUEST_TIMEOUT_S` of waiting. 429 and 503 stay retryable: with the defaults (`max_retries=2`, `QUEUE_TIMEOUT_S=30`) a client gets `RateLimitError` after about 60 s when the queue is already full (each attempt is refused at once, with 30 s pauses between them) and after about 150 s when every attempt waits the full `QUEUE_TIMEOUT_S` in the queue. The `openai` 3.51 client waits for `Retry-After` only up to 120 s and does not retry above that, so with `QUEUE_TIMEOUT_S` over 120 a full queue fails at once; set `max_retries` in the client to what suits you.
 
 The tests in `tests/test_openai_api.py` call the service through the official client (version 3.51) over an in-process transport and validate the raw answers with the client's own models. A live run against the model was not made on this machine.
 
@@ -203,7 +203,9 @@ Package `error_classifier`. `Status` shows what exists now.
 | `classify/service.py` | Pipeline: normalisation, request, validation, retry, latency | present |
 | `concurrency.py` | Semaphore with a bounded queue that waits at most `QUEUE_TIMEOUT_S` | present |
 | `api/disconnect.py` | Waits for `http.disconnect` next to the work and cancels the work when the client goes away | present |
-| `api/app.py`, `api/routes.py` | FastAPI app, error handlers, `/classify`, `/health`, `/ready` | present |
+| `api/app.py`, `api/routes.py` | FastAPI app, error handlers, the shared classification path, `/classify`, `/health`, `/ready` | present |
+| `api/openai.py` | OpenAI-compatible `/v1/models` and `/v1/chat/completions` | present |
+| `api/auth.py` | Optional `API_KEY` check for `/classify` and `/v1/*` | present |
 | `evaluation/` | Evaluation set loading and checks, metrics and the model choice rule, the run through Classifier, result files, the report and the wait for a quiet machine (`evaluation/load.py`) | present |
 | `scripts/evaluate.py` | Command line of the evaluation: run and report | present |
 | `benchmark/` | Benchmark protocol through `POST /classify`: `/metrics` and cgroup readings, aggregates, the run (cold start, series, sequential, two clients, queue probe), JSONL files and the report tables | present |
@@ -251,7 +253,7 @@ Package `error_classifier`. `Status` shows what exists now.
 | MAX_REQUEST_BYTES | 262144 | Largest request body, not less than 12 times `MAX_INPUT_CHARS` plus 64 |
 | MAX_OUTPUT_TOKENS | 256 | Token limit of the model answer, 16 to 2048 |
 | LLM_TEMPERATURE | 0.0 | Sampling temperature, 0 to 2 |
-| API_KEY | empty | Access key: when set, `/classify` and `/v1/*` need `Authorization: Bearer <API_KEY>` and answer 401 `unauthorized` otherwise; printable ASCII without spaces; `/health` and `/ready` stay open |
+| API_KEY | empty | Access key: when set, `/classify` and `/v1/*` need `Authorization: Bearer <API_KEY>` and answer 401 `unauthorized` otherwise; letters, digits and `. _ ~ + / = -` only (use `openssl rand -hex 32`); `/health` and `/ready` stay open |
 | LLM_DISABLE_THINKING | false | Sends `chat_template_kwargs` with `enable_thinking: false` for models that think |
 
 ## Error codes
