@@ -7,7 +7,7 @@ from typing import Literal, cast
 
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import Response
-from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from pydantic import BaseModel, ConfigDict, ValidationError
 
 from error_classifier.api.auth import require_api_key
 from error_classifier.api.routes import classify_message, describe_invalid
@@ -31,7 +31,7 @@ class ChatCompletionRequest(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
     model: str
-    messages: list[OpenAIMessage] = Field(min_length=1)
+    messages: list[OpenAIMessage]
     stream: bool | None = None
     n: int | None = None
     tools: list[object] | None = None
@@ -102,6 +102,8 @@ def message_from(req: ChatCompletionRequest, alias: str) -> str:
     if req.model != alias:
         raise model_not_found(req.model, alias)
     _check_parameters(req)
+    if not req.messages:
+        raise InvalidInputError("The messages array must not be empty", param="messages")
     last = req.messages[-1]
     if last.role != "user":
         raise InvalidInputError("The last message must have the role 'user'", param="messages")

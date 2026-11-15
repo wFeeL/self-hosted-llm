@@ -13,6 +13,7 @@ from fakes import BlockingChat
 from openai.types import Model
 from openai.types.chat import ChatCompletion, ChatCompletionUserMessageParam
 
+from error_classifier.api import openai as openai_api
 from error_classifier.api.app import create_app
 from error_classifier.classify.schema import ClassificationResult
 from error_classifier.classify.service import Classifier, ClassifierOptions
@@ -167,18 +168,27 @@ async def test_usage_is_left_out_when_the_runtime_gave_no_counts(
 
 
 async def test_missing_required_field_fails_validation(
-    respx_mock: respx.MockRouter, serve: Serve
+    respx_mock: respx.MockRouter, serve: Serve, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     respx_mock.post(URL).mock(return_value=_good())
+    original = openai_api.completion_body
+
+    def without_index(*args: Any, **kwargs: Any) -> dict[str, object]:
+        body = original(*args, **kwargs)
+        del cast(list[dict[str, object]], body["choices"])[0]["index"]
+        return body
+
     async with serve(create_app(_settings())) as client:
-        response = await client.post(
+        intact = await client.post(
             "/v1/chat/completions", json={"model": ALIAS, "messages": [_user("x")]}
         )
-    body = response.json()
-    ChatCompletion.model_validate(body, strict=True)
-    del body["choices"][0]["index"]
+        ChatCompletion.model_validate(intact.json(), strict=True)
+        monkeypatch.setattr(openai_api, "completion_body", without_index)
+        broken = await client.post(
+            "/v1/chat/completions", json={"model": ALIAS, "messages": [_user("x")]}
+        )
     with pytest.raises(ValueError, match="index"):
-        ChatCompletion.model_validate(body, strict=True)
+        ChatCompletion.model_validate(broken.json(), strict=True)
 
 
 async def test_wrong_model_is_not_found(serve: Serve) -> None:
@@ -307,7 +317,6 @@ async def test_response_format_without_type_is_rejected(serve: Serve) -> None:
 @pytest.mark.parametrize(
     "body",
     [
-        {"model": ALIAS, "messages": []},
         {"model": ALIAS},
         {"model": ALIAS, "messages": [_user("x")], "tools": "oops"},
         {"model": ALIAS, "messages": [{"role": "wizard", "content": "x"}]},
@@ -320,6 +329,14 @@ async def test_schema_errors_are_invalid_input(serve: Serve, body: object) -> No
     assert error["code"] == "invalid_input"
     assert error["message"].startswith("Invalid request: ")
     assert error["param"] is None
+
+
+async def test_empty_messages_name_the_parameter(serve: Serve) -> None:
+    async with serve(create_app(_settings())) as client:
+        response = await _bad_request(client, {"model": ALIAS, "messages": []})
+    error = response.json()["error"]
+    assert error["message"] == "The messages array must not be empty"
+    assert error["param"] == "messages"
 
 
 async def test_invalid_json_is_invalid_input(serve: Serve) -> None:

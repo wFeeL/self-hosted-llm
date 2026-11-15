@@ -123,6 +123,13 @@ async def test_without_a_configured_key_nothing_changes(
     assert response.status_code == 200
 
 
+@pytest.mark.parametrize("good", ["abc123", "a.b_c~d+e/f=g-h", "0" * 64])
+def test_plain_keys_are_accepted(good: str) -> None:
+    settings = Settings.model_validate({"llm_model": "m", "api_key": good})
+    assert settings.api_key is not None
+    assert settings.api_key.get_secret_value() == good
+
+
 def test_empty_key_means_no_key() -> None:
     assert Settings.model_validate({"llm_model": "m", "api_key": ""}).api_key is None
 
@@ -135,12 +142,25 @@ def test_key_is_read_from_the_environment(monkeypatch: pytest.MonkeyPatch) -> No
     assert settings.api_key.get_secret_value() == KEY
 
 
-@pytest.mark.parametrize("bad", ["has space", "tab\tkey", "café", "line\nbreak"])
+@pytest.mark.parametrize(
+    "bad",
+    [
+        "has space",
+        "tab\tkey",
+        "café",
+        "line\nbreak",
+        "pa$$word",
+        'quo"te',
+        "it's",
+        "a#b",
+        "back`tick",
+    ],
+)
 def test_unprintable_key_is_rejected_without_echoing_it(bad: str) -> None:
     with pytest.raises(ValidationError) as caught:
         Settings.model_validate({"llm_model": "m", "api_key": bad})
     text = str(caught.value)
-    assert "API_KEY must be printable ASCII without spaces" in text
+    assert "API_KEY may contain only letters, digits" in text
     assert bad not in text
 
 
@@ -163,7 +183,7 @@ def test_no_warning_when_the_key_is_set(caplog: pytest.LogCaptureFixture) -> Non
     assert [r for r in caplog.records if r.name == "error_classifier.api"] == []
 
 
-def test_benchmark_sends_the_key_to_the_api_only(
+def test_benchmark_sends_the_key_to_classify_only(
     stack: Stack, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setenv("API_KEY", KEY)
@@ -171,6 +191,8 @@ def test_benchmark_sends_the_key_to_the_api_only(
     assert code == 0
     assert stack.api_auth
     assert set(stack.api_auth) == {f"Bearer {KEY}"}
+    assert stack.ready_auth
+    assert set(stack.ready_auth) == {None}
     assert stack.llm_auth
     assert set(stack.llm_auth) == {None}
 
