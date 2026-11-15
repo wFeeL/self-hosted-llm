@@ -72,8 +72,9 @@ def _info_records(caplog: pytest.LogCaptureFixture) -> list[logging.LogRecord]:
     return [r for r in caplog.records if r.name == LOGGER and r.levelno == logging.INFO]
 
 
-def _error_body(code: str, message: str) -> dict[str, object]:
-    return {"error": {"code": code, "message": message}}
+def _error_body(code: str, message: str, status: int | None = None) -> dict[str, object]:
+    kind = "server_error" if status is not None and status >= 500 else "invalid_request_error"
+    return {"error": {"code": code, "message": message, "type": kind, "param": None}}
 
 
 async def test_classify_200(respx_mock: respx.MockRouter, serve: Serve) -> None:
@@ -104,7 +105,7 @@ async def test_classify_502_after_two_invalid(respx_mock: respx.MockRouter, serv
         response = await _post(client, "boom")
     assert response.status_code == 502
     assert response.json() == _error_body(
-        "model_output_invalid", "The model returned an invalid answer twice"
+        "model_output_invalid", "The model returned an invalid answer twice", 502
     )
     assert route.call_count == 2
 
@@ -249,7 +250,7 @@ async def test_unexpected_exception_500(
     async with serve(create_app(_settings())) as client:
         response = await _post(client, "boom")
     assert response.status_code == 500
-    assert response.json() == _error_body("internal_error", "Internal error")
+    assert response.json() == _error_body("internal_error", "Internal error", 500)
     assert "secret-marker" not in response.text
     loud = [r for r in caplog.records if r.levelno >= logging.INFO]
     assert all("secret-marker" not in r.getMessage() for r in loud)
@@ -274,7 +275,7 @@ async def test_log_has_no_user_text(
     info = _info_records(caplog)
     assert len(info) == 1
     text = info[0].getMessage()
-    assert "outcome=ok" in text
+    assert "route=classify outcome=ok" in text
     assert "attempts=2" in text
 
 
@@ -287,8 +288,8 @@ async def test_log_line_fields_on_success(
         await _post(client, "  boom ")
     (record,) = _info_records(caplog)
     assert re.fullmatch(
-        r"classify outcome=ok total_ms=\d+ queue_ms=\d+ model=granite attempts=1 input_chars=4 "
-        r"truncated=False prompt_tokens=11 completion_tokens=7",
+        r"classify route=classify outcome=ok total_ms=\d+ queue_ms=\d+ model=granite attempts=1 "
+        r"input_chars=4 truncated=False prompt_tokens=11 completion_tokens=7",
         record.getMessage(),
     )
 
@@ -302,8 +303,8 @@ async def test_log_line_unknown_fields_are_dashes(
         await client.post("/classify", content=b"{}")
     (record,) = _info_records(caplog)
     assert re.fullmatch(
-        r"classify outcome=invalid_input total_ms=\d+ queue_ms=- model=- attempts=0 input_chars=- "
-        r"truncated=- prompt_tokens=- completion_tokens=-",
+        r"classify route=classify outcome=invalid_input total_ms=\d+ queue_ms=- model=- "
+        r"attempts=0 input_chars=- truncated=- prompt_tokens=- completion_tokens=-",
         record.getMessage(),
     )
 
@@ -364,7 +365,7 @@ async def test_fallback_exception_handler() -> None:
     ):
         response = await client.get("/boom")
     assert response.status_code == 500
-    assert response.json() == _error_body("internal_error", "Internal error")
+    assert response.json() == _error_body("internal_error", "Internal error", 500)
 
 
 async def test_log_latency_is_the_route_time_for_success(
@@ -429,6 +430,7 @@ async def test_queue_full_gives_429(serve: Serve) -> None:
     assert third.status_code == 429
     assert third.json() == _error_body("queue_full", QUEUE_FULL_TEXT)
     assert third.headers["retry-after"] == "30"
+    assert "x-should-retry" not in third.headers
     assert [r.status_code for r in ok] == [200, 200]
 
 
@@ -558,7 +560,7 @@ def _status(messages: list[Message]) -> int:
 
 
 def _outcomes(caplog: pytest.LogCaptureFixture) -> list[str]:
-    return [r.getMessage().split()[1] for r in _info_records(caplog)]
+    return [r.getMessage().split()[2] for r in _info_records(caplog)]
 
 
 BODY = b'{"message": "boom"}'
@@ -669,3 +671,51 @@ async def test_no_disconnect_keeps_runtime_error_code() -> None:
             _swap_in(app, chat)
             messages = await _asgi_post(app, BODY, asyncio.Event())
     assert _status(messages) == 504
+
+
+async def test_unknown_path_gives_the_error_shape(serve: Serve) -> None:
+    async with serve(create_app(_settings())) as client:
+        response = await client.get("/nope")
+    assert response.status_code == 404
+    assert response.json() == _error_body("not_found", "Not found")
+
+
+async def test_wrong_method_gives_the_error_shape(serve: Serve) -> None:
+    async with serve(create_app(_settings())) as client:
+        response = await client.get("/classify")
+    assert response.status_code == 405
+    assert response.json() == _error_body("method_not_allowed", "Method not allowed")
+    assert response.headers["allow"] == "POST"
+
+
+@pytest.mark.respx(assert_all_called=False)
+async def test_server_errors_say_do_not_retry(
+    respx_mock: respx.MockRouter, serve: Serve, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    respx_mock.post(URL).mock(side_effect=[_runtime("nope"), _runtime("nope")])
+    async with serve(create_app(_settings())) as client:
+        invalid = await _post(client, "boom")
+    assert invalid.status_code == 502
+    assert invalid.headers["x-should-retry"] == "false"
+
+    _boom_classify(monkeypatch)
+    async with serve(create_app(_settings())) as client:
+        internal = await _post(client, "boom")
+    assert internal.status_code == 500
+    assert internal.headers["x-should-retry"] == "false"
+
+
+async def test_unexpected_handler_says_do_not_retry() -> None:
+    app = create_app(_settings())
+
+    async def boom() -> None:
+        raise RuntimeError("x")
+
+    app.add_api_route("/boom", boom)
+    transport = httpx.ASGITransport(app=app, raise_app_exceptions=False)
+    async with (
+        app.router.lifespan_context(app),
+        httpx.AsyncClient(transport=transport, base_url="http://api.test") as client,
+    ):
+        response = await client.get("/boom")
+    assert response.headers["x-should-retry"] == "false"

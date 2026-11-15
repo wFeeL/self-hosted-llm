@@ -34,7 +34,12 @@ async def test_ready_503_envelope_when_runtime_loading(
     assert route.call_count == 1
     assert response.status_code == 503
     assert response.json() == {
-        "error": {"code": "llm_unavailable", "message": "LLM runtime is still loading the model"}
+        "error": {
+            "code": "llm_unavailable",
+            "message": "LLM runtime is still loading the model",
+            "type": "server_error",
+            "param": None,
+        }
     }
 
 

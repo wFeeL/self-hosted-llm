@@ -33,7 +33,14 @@ async def test_service_error_envelope(serve: Serve) -> None:
     async with serve(app) as client:
         response = await client.get("/boom")
     assert response.status_code == 503
-    assert response.json() == {"error": {"code": "llm_unavailable", "message": "down"}}
+    assert response.json() == {
+        "error": {
+            "code": "llm_unavailable",
+            "message": "down",
+            "type": "server_error",
+            "param": None,
+        }
+    }
 
 
 def test_create_app_fails_on_bad_env() -> None:

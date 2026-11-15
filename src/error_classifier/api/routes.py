@@ -1,6 +1,6 @@
 import logging
 import time
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from typing import cast
 
 from fastapi import APIRouter, Request
@@ -12,7 +12,7 @@ from error_classifier.api.disconnect import ClientDisconnectedError, cancel_on_d
 from error_classifier.classify.service import Classification, Classifier, ClassifyStats
 from error_classifier.concurrency import ConcurrencyLimiter
 from error_classifier.config import Settings
-from error_classifier.errors import InvalidInputError, ServiceError
+from error_classifier.errors import InvalidInputError, ServiceError, error_body
 from error_classifier.llm.client import LlmClient
 
 router = APIRouter()
@@ -66,6 +66,7 @@ def _dash(value: object) -> str:
 
 
 def _log_outcome(
+    route: str,
     outcome: str,
     total_ms: int,
     stats: ClassifyStats,
@@ -73,8 +74,9 @@ def _log_outcome(
     queue_ms: int | None,
 ) -> None:
     logger.info(
-        "classify outcome=%s total_ms=%d queue_ms=%s model=%s attempts=%s input_chars=%s "
+        "classify route=%s outcome=%s total_ms=%d queue_ms=%s model=%s attempts=%s input_chars=%s "
         "truncated=%s prompt_tokens=%s completion_tokens=%s",
+        route,
         outcome,
         total_ms,
         _dash(queue_ms),
@@ -99,8 +101,20 @@ async def ready(request: Request) -> dict[str, str]:
     return {"status": "ready", "model": llm.model}
 
 
-@router.post("/classify", response_model=None)
-async def classify(request: Request) -> dict[str, object] | Response:
+def _parse_classify(body: bytes) -> str:
+    try:
+        parsed = ClassifyRequest.model_validate_json(body)
+    except ValidationError as exc:
+        message = describe_invalid(exc.errors(include_input=False, include_url=False))
+        raise InvalidInputError(message) from None
+    if not parsed.message.strip():
+        raise InvalidInputError("Field 'message' must not be empty")
+    return parsed.message
+
+
+async def classify_message(
+    request: Request, parse: Callable[[bytes], str], route: str
+) -> tuple[Classification, ClassifyStats] | Response:
     started = time.perf_counter()
     settings = cast(Settings, request.app.state.settings)
     stats = ClassifyStats()
@@ -118,29 +132,30 @@ async def classify(request: Request) -> dict[str, object] | Response:
 
     try:
         body = await read_body_limited(request, settings.max_request_bytes)
-        try:
-            parsed = ClassifyRequest.model_validate_json(body)
-        except ValidationError as exc:
-            message = describe_invalid(exc.errors(include_input=False, include_url=False))
-            raise InvalidInputError(message) from None
-        message_chars = len(parsed.message.strip())
-        if message_chars == 0:
-            raise InvalidInputError("Field 'message' must not be empty")
+        text = parse(body)
+        message_chars = len(text.strip())
 
         async def work() -> Classification:
             nonlocal queue_started, queue_ms
             queue_started = time.perf_counter()
             async with get_limiter(request).slot():
                 queue_ms = round((time.perf_counter() - queue_started) * 1000)
-                return await get_classifier(request).classify(parsed.message, stats)
+                return await get_classifier(request).classify(text, stats)
 
         result = await cancel_on_disconnect(request.receive, work())
     except ServiceError as exc:
-        _log_outcome(exc.code, elapsed_ms(), stats, stats.input_chars or message_chars, waited_ms())
+        _log_outcome(
+            route, exc.code, elapsed_ms(), stats, stats.input_chars or message_chars, waited_ms()
+        )
         raise
     except ClientDisconnectedError, ClientDisconnect:
         _log_outcome(
-            "client_closed", elapsed_ms(), stats, stats.input_chars or message_chars, waited_ms()
+            route,
+            "client_closed",
+            elapsed_ms(),
+            stats,
+            stats.input_chars or message_chars,
+            waited_ms(),
         )
         return Response(status_code=499)
     except Exception as exc:
@@ -148,13 +163,28 @@ async def classify(request: Request) -> dict[str, object] | Response:
         logger.error("classify failed with %s", type(exc).__name__)
         logger.debug("classify failure trace", exc_info=exc)
         _log_outcome(
-            "internal_error", elapsed_ms(), stats, stats.input_chars or message_chars, waited_ms()
+            route,
+            "internal_error",
+            elapsed_ms(),
+            stats,
+            stats.input_chars or message_chars,
+            waited_ms(),
         )
         return JSONResponse(
             status_code=500,
-            content={"error": {"code": "internal_error", "message": "Internal error"}},
+            content=error_body("internal_error", "Internal error", 500),
+            headers={"x-should-retry": "false"},
         )
-    _log_outcome("ok", elapsed_ms(), stats, stats.input_chars, queue_ms)
+    _log_outcome(route, "ok", elapsed_ms(), stats, stats.input_chars, queue_ms)
+    return result, stats
+
+
+@router.post("/classify", response_model=None)
+async def classify(request: Request) -> dict[str, object] | Response:
+    outcome = await classify_message(request, _parse_classify, "classify")
+    if isinstance(outcome, Response):
+        return outcome
+    result, _ = outcome
     return {
         "category": result.result.category.value,
         "severity": result.result.severity.value,
