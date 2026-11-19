@@ -1,3 +1,4 @@
+import dataclasses
 from pathlib import Path
 
 import pytest
@@ -8,6 +9,7 @@ from error_classifier.benchmark.report import (
     BenchFile,
     Memory,
     Summary,
+    cpu_limit,
     read_bench,
     render_bench_report,
     write_bench,
@@ -243,3 +245,42 @@ def test_report_shows_dashes_for_files_without_swap_fields() -> None:
         "api memory max",
     ):
         assert columns[name] == "-", name
+
+
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [
+        ("400000 100000", "4"),
+        ("150000 100000", "1.5"),
+        ("333333 100000", "3.33"),
+        ("max 100000", "none"),
+        ("garbage", "garbage"),
+        ("400000", "400000"),
+        ("400000 0", "400000 0"),
+        ("a b", "a b"),
+    ],
+)
+def test_cpu_limit_formats(raw: str, expected: str) -> None:
+    assert cpu_limit(raw) == expected
+
+
+def with_cpu_limit(bench: BenchFile, value: str | None) -> BenchFile:
+    config = bench.summary.config.model_copy(update={"llm_cpu_max": value})
+    summary = bench.summary.model_copy(update={"config": config})
+    return dataclasses.replace(bench, summary=summary)
+
+
+def test_report_shows_the_cpu_limit() -> None:
+    files = [with_cpu_limit(alpha(), "400000 100000"), with_cpu_limit(beta(), "400000 100000")]
+    assert "llm CPU limit 4;" in render_bench_report(files)
+
+
+def test_report_refuses_mixed_cpu_limits() -> None:
+    files = [with_cpu_limit(alpha(), "400000 100000"), beta()]
+    with pytest.raises(ValueError, match="llm CPU limits"):
+        render_bench_report(files)
+
+
+def test_report_refuses_two_files_of_one_model() -> None:
+    with pytest.raises(ValueError, match="two result files"):
+        render_bench_report([alpha(), alpha()])

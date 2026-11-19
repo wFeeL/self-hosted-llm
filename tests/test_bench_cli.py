@@ -1,5 +1,6 @@
 import hashlib
 import json
+from datetime import UTC, datetime
 from pathlib import Path
 
 import httpx
@@ -151,6 +152,50 @@ def test_run_writes_a_complete_file(
     assert "queue 6 ok" in err
 
 
+def test_run_records_the_cpu_limit(stack: Stack, tmp_path: Path) -> None:
+    code, _ = run_cli(stack, tmp_path)
+
+    assert code == 0
+    assert read_bench(only_file(tmp_path)).summary.config.llm_cpu_max == "400000 100000"
+
+
+def test_free_path(tmp_path: Path) -> None:
+    started = "2026-11-20T15:29:07Z"
+    assert cli.free_path(tmp_path, started, "m", True) == tmp_path / "2026-11-20-m.jsonl"
+    (tmp_path / "2026-11-20-m.jsonl").write_text("x", encoding="utf-8")
+    assert cli.free_path(tmp_path, started, "m", True) == tmp_path / "2026-11-20-m-152907.jsonl"
+    assert cli.free_path(tmp_path, started, "m", False) == tmp_path / "2026-11-20-m.jsonl.partial"
+    (tmp_path / "2026-11-20-m.jsonl.partial").write_text("x", encoding="utf-8")
+    assert (
+        cli.free_path(tmp_path, started, "m", False)
+        == tmp_path / "2026-11-20-m-152907.jsonl.partial"
+    )
+
+
+def test_second_run_keeps_the_first_file(
+    stack: Stack, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    first = tmp_path / f"{datetime.now(UTC):%Y-%m-%d}-m-test.jsonl"
+    first.write_text("first", encoding="utf-8")
+    code, _ = run_cli(stack, tmp_path)
+
+    assert code == 0
+    assert first.read_text(encoding="utf-8") == "first"
+    assert len(list(tmp_path.glob("*-[0-9][0-9][0-9][0-9][0-9][0-9].jsonl"))) == 1
+    assert len(list(tmp_path.iterdir())) == 2
+    assert "warning:" in capsys.readouterr().err
+
+
+def test_docker_image_name_falls_back_to_config(stack: Stack, tmp_path: Path) -> None:
+    stack.docker_inspect = True
+    code, _ = run_cli(stack, tmp_path, "--engine", "docker")
+
+    assert code == 0
+    config = read_bench(only_file(tmp_path)).summary.config
+    assert config.engine == "docker"
+    assert (config.llm_image, config.api_image) == ("cfg-llm_c:tag", "cfg-api_c:tag")
+
+
 def test_waiting_for_load_is_recorded(stack: Stack, tmp_path: Path) -> None:
     code, env = run_cli(stack, tmp_path, loads=[2.0, 0.5])
 
@@ -159,6 +204,16 @@ def test_waiting_for_load_is_recorded(stack: Stack, tmp_path: Path) -> None:
     config = read_bench(only_file(tmp_path)).summary.config
     assert config.loadavg_before == [0.5, 0.5, 0.5]
     assert config.loaded is False
+
+
+def test_no_load_wait_skips_the_wait(stack: Stack, tmp_path: Path) -> None:
+    code, env = run_cli(stack, tmp_path, "--no-load-wait", loads=[3.0])
+
+    assert code == 0
+    assert env.pauses == []
+    config = read_bench(only_file(tmp_path)).summary.config
+    assert config.loadavg_before == [3.0, 3.0, 3.0]
+    assert config.loaded is True
 
 
 def test_busy_machine_marks_the_file_loaded(stack: Stack, tmp_path: Path) -> None:

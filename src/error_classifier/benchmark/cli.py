@@ -82,12 +82,27 @@ def _parser() -> argparse.ArgumentParser:
     run.add_argument("--compose-file", action="append", default=None)
     run.add_argument("--cold-start", action="store_true")
     run.add_argument("--skip-sequential", action="store_true")
+    run.add_argument("--no-load-wait", action="store_true")
     run.add_argument("--max-minutes", type=float, default=15.0)
     run.add_argument("--dataset", type=Path, default=DEFAULT_DATASET)
     run.add_argument("--out-dir", type=Path, default=Path("bench/results"))
     report = commands.add_parser("report", help="print tables for benchmark files")
     report.add_argument("paths", type=Path, nargs="+", metavar="PATH")
     return parser
+
+
+def _plain_path(out_dir: Path, started_at: str, model: str, complete: bool) -> Path:
+    suffix = "" if complete else ".partial"
+    return out_dir / f"{started_at[:10]}-{model}.jsonl{suffix}"
+
+
+def free_path(out_dir: Path, started_at: str, model: str, complete: bool) -> Path:
+    plain = _plain_path(out_dir, started_at, model, complete)
+    if not plain.exists():
+        return plain
+    suffix = "" if complete else ".partial"
+    clock = started_at[11:19].replace(":", "")  # "2026-11-20T15:29:07Z" -> "152907"
+    return out_dir / f"{started_at[:10]}-{model}-{clock}.jsonl{suffix}"
 
 
 def _progress(record: RequestRecord) -> None:
@@ -221,7 +236,7 @@ def _run(
     except (DatasetError, OSError, ValueError) as exc:
         _err(str(exc))
         return 2
-    before = wait_for_load(sleep, loadavg)
+    before = loadavg() if args.no_load_wait else wait_for_load(sleep, loadavg)
     cold_start = cast(bool, args.cold_start)
     if cold_start:
         compose = [engine, "compose", *(a for f in files for a in ("-f", f))]
@@ -258,6 +273,7 @@ def _run(
     after = loadavg()
 
     llm_mem = _cgroup_memory(run, engine, llm_container)
+    cpu_max = cgroup_file(run, engine, llm_container, "cpu.max")
     api_mem = _cgroup_memory(run, engine, api_container)
     llm_image, llm_image_id, llm_image_size = _image(run, engine, llm_container)
     api_image, api_image_id, api_image_size = _image(run, engine, api_container)
@@ -302,6 +318,7 @@ def _run(
         hawk_containers=_hawk_containers(run, engine),
         cpu_count=os.cpu_count(),
         machine=platform.machine(),
+        llm_cpu_max=None if cpu_max is None else cpu_max.strip(),
         complete=result.complete,
         stop_reason=result.stop_reason,
     )
@@ -324,8 +341,11 @@ def _run(
         ),
         aggregates=aggregate(result.records, result.readings),
     )
-    name = f"{started_at[:10]}-{model}.jsonl"
-    path = cast(Path, args.out_dir) / (name if result.complete else name + ".partial")
+    out_dir = cast(Path, args.out_dir)
+    path = free_path(out_dir, started_at, model, result.complete)
+    plain = _plain_path(out_dir, started_at, model, result.complete)
+    if path != plain:
+        _err(f"warning: {plain} exists, wrote {path}")
     write_bench(path, result.records, result.readings, summary)
     if result.complete:
         return 0
