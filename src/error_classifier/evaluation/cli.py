@@ -42,7 +42,7 @@ def _positive(value: str) -> int:
     return number
 
 
-def _parser() -> argparse.ArgumentParser:
+def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="evaluate")
     commands = parser.add_subparsers(dest="command", required=True)
     run = commands.add_parser("run", help="run the set through the classifier")
@@ -233,7 +233,7 @@ def main(
     sleep: Callable[[float], None] = time.sleep,
     loadavg: LoadAvg = os.getloadavg,
 ) -> int:
-    args = _parser().parse_args(argv)
+    args = build_parser().parse_args(argv)
     if args.command == "run":
         return _run(args, sleep, loadavg)
     return _report(args)
