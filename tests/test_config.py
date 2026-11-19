@@ -57,6 +57,15 @@ def test_bad_timeout_fails(monkeypatch: pytest.MonkeyPatch, value: str) -> None:
         load_settings()
 
 
+@pytest.mark.parametrize(
+    ("raw", "expected"), [("info", "INFO"), ("Warning", "WARNING"), ("debug", "DEBUG")]
+)
+def test_log_level_ignores_case(monkeypatch: pytest.MonkeyPatch, raw: str, expected: str) -> None:
+    monkeypatch.setenv("LLM_MODEL", "m")
+    monkeypatch.setenv("LOG_LEVEL", raw)
+    assert load_settings().log_level == expected
+
+
 def test_unknown_log_level_fails(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("LLM_MODEL", "m")
     monkeypatch.setenv("LOG_LEVEL", "LOUD")

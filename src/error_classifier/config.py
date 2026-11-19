@@ -38,6 +38,11 @@ class Settings(BaseSettings):
             )
         return value
 
+    @field_validator("log_level", mode="before")
+    @classmethod
+    def _upper_log_level(cls, value: object) -> object:
+        return value.upper() if isinstance(value, str) else value
+
     @field_validator("llm_base_url", mode="after")
     @classmethod
     def _strip_trailing_slash(cls, value: str) -> str:
