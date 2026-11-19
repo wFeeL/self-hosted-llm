@@ -233,6 +233,7 @@ class Stack:
             "memory.swap.peak": {"llm_c": "70\n", "api_c": "7\n"},
             "memory.swap.max": {"llm_c": "0\n", "api_c": "max\n"},
             "memory.max": {"llm_c": "6442450944\n", "api_c": "536870912\n"},
+            "cpu.max": {"llm_c": "400000 100000\n", "api_c": "max 100000\n"},
         }
         value = values.get(name, {}).get(container)
         return CommandResult(1, "") if value is None else CommandResult(0, value)

@@ -53,6 +53,7 @@ class BenchConfig(_Model):
     hawk_containers: int | None
     cpu_count: int | None
     machine: str
+    llm_cpu_max: str | None = None  # absent in files written before the limit was read
     complete: bool
     stop_reason: str | None
 
@@ -161,6 +162,22 @@ def llm_need_bytes(bench: BenchFile) -> int | None:
     return None if conservative is None or peak is None else max(conservative, peak)
 
 
+def cpu_limit(raw: str) -> str:
+    parts = raw.split()
+    if len(parts) != 2:
+        return raw
+    quota, period = parts
+    if quota == "max":
+        return "none"
+    try:
+        quota_us, period_us = int(quota), int(period)
+    except ValueError:
+        return raw
+    if period_us <= 0:
+        return raw
+    return f"{round(quota_us / period_us, 2):g}"
+
+
 def _same(files: Sequence[BenchFile], what: str, key: Callable[[BenchConfig], object]) -> None:
     if len({json.dumps(key(f.summary.config), sort_keys=True) for f in files}) != 1:
         raise ValueError(f"the results come from different {what}")
@@ -189,6 +206,7 @@ def _check(files: Sequence[BenchFile]) -> None:
     _same(files, "llm image id", lambda c: c.llm_image_id)
     _same(files, "cpu count", lambda c: c.cpu_count)
     _same(files, "machine", lambda c: c.machine)
+    _same(files, "llm CPU limits", lambda c: c.llm_cpu_max)
     _same(files, "compose version", lambda c: c.compose_version)
     for f in files:
         _check_rows(f)
@@ -205,9 +223,11 @@ def _check(files: Sequence[BenchFile]) -> None:
 
 def _hardware(config: BenchConfig) -> str:
     env = config.runtime_env
+    limit = "" if config.llm_cpu_max is None else f" llm CPU limit {cpu_limit(config.llm_cpu_max)};"
     return (
         f"Engine: {config.engine}, {config.compose_version or '-'}; "
-        f"{config.cpu_count if config.cpu_count is not None else '-'} vCPU {config.machine}; "
+        f"{config.cpu_count if config.cpu_count is not None else '-'} vCPU {config.machine};"
+        f"{limit} "
         f"llm threads {env.get('LLAMA_ARG_THREADS', '-')}, "
         f"context {env.get('LLAMA_ARG_CTX_SIZE', '-')}, "
         f"slots {env.get('LLAMA_ARG_N_PARALLEL', '-')}, "

@@ -151,6 +151,13 @@ def test_run_writes_a_complete_file(
     assert "queue 6 ok" in err
 
 
+def test_run_records_the_cpu_limit(stack: Stack, tmp_path: Path) -> None:
+    code, _ = run_cli(stack, tmp_path)
+
+    assert code == 0
+    assert read_bench(only_file(tmp_path)).summary.config.llm_cpu_max == "400000 100000"
+
+
 def test_waiting_for_load_is_recorded(stack: Stack, tmp_path: Path) -> None:
     code, env = run_cli(stack, tmp_path, loads=[2.0, 0.5])
 

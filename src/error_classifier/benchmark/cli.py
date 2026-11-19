@@ -259,6 +259,7 @@ def _run(
     after = loadavg()
 
     llm_mem = _cgroup_memory(run, engine, llm_container)
+    cpu_max = cgroup_file(run, engine, llm_container, "cpu.max")
     api_mem = _cgroup_memory(run, engine, api_container)
     llm_image, llm_image_id, llm_image_size = _image(run, engine, llm_container)
     api_image, api_image_id, api_image_size = _image(run, engine, api_container)
@@ -303,6 +304,7 @@ def _run(
         hawk_containers=_hawk_containers(run, engine),
         cpu_count=os.cpu_count(),
         machine=platform.machine(),
+        llm_cpu_max=None if cpu_max is None else cpu_max.strip(),
         complete=result.complete,
         stop_reason=result.stop_reason,
     )
