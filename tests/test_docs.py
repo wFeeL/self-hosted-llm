@@ -1,13 +1,18 @@
+import argparse
 import json
 import re
+import shlex
 import subprocess
+from collections.abc import Callable
 from pathlib import Path
 
 import pytest
 
+from error_classifier.benchmark.cli import build_parser as bench_parser
 from error_classifier.classify.prompt import SYSTEM_PROMPT
 from error_classifier.classify.schema import Category, Severity
 from error_classifier.errors import ServiceError
+from error_classifier.evaluation.cli import build_parser as eval_parser
 
 ROOT = Path(__file__).resolve().parents[1]
 README = (ROOT / "README.md").read_text(encoding="utf-8")
@@ -128,3 +133,44 @@ def test_only_the_readme_is_markdown() -> None:
 
 def test_no_docs_directory() -> None:
     assert not (ROOT / "docs").exists()
+
+
+def _sh_commands(script: str) -> list[str]:
+    """Commands `script run` from the sh blocks of the README, joined at a trailing backslash."""
+    found: list[str] = []
+    in_block = False
+    pending = ""
+    for raw in README.splitlines():
+        if re.fullmatch(r"\s*```sh\s*", raw):
+            in_block = True
+        elif in_block and raw.strip().startswith("```"):
+            in_block = False
+            pending = ""
+        elif in_block:
+            line = raw.rstrip()
+            if line.endswith("\\"):
+                pending += line[:-1] + " "
+                continue
+            line = pending + line
+            pending = ""
+            if f"scripts/{script}.py run" in line:
+                found.append(line)
+    return found
+
+
+@pytest.mark.parametrize(
+    ("script", "parser", "count"),
+    [("evaluate", eval_parser, 2), ("bench", bench_parser, 1)],
+)
+def test_readme_commands_parse(
+    script: str, parser: Callable[[], argparse.ArgumentParser], count: int
+) -> None:
+    lines = _sh_commands(script)
+    assert len(lines) == count
+    for line in lines:
+        tokens = shlex.split(line, comments=True)
+        start = next(i for i, t in enumerate(tokens) if t.endswith(f"scripts/{script}.py"))
+        try:
+            parser().parse_args(tokens[start + 1 :])
+        except SystemExit as exc:
+            pytest.fail(f"README command does not parse ({exc.code}): {line}")

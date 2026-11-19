@@ -69,7 +69,7 @@ def _err(text: str) -> None:
     print(text, file=sys.stderr)
 
 
-def _parser() -> argparse.ArgumentParser:
+def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="bench")
     commands = parser.add_subparsers(dest="command", required=True)
     run = commands.add_parser("run", help="run the benchmark protocol on a running stack")
@@ -381,7 +381,7 @@ def main(
     clock: Callable[[], float] = time.perf_counter,
     sleep_async: Callable[[float], Awaitable[None]] = asyncio.sleep,
 ) -> int:
-    args = _parser().parse_args(argv)
+    args = build_parser().parse_args(argv)
     if args.command == "run":
         return _run(args, sleep, loadavg, run, clock, sleep_async)
     return _report(args)
