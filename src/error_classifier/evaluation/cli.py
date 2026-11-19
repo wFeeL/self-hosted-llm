@@ -52,6 +52,7 @@ def _parser() -> argparse.ArgumentParser:
     run.add_argument("--container", required=True)
     run.add_argument("--max-minutes", type=float, default=15.0)
     run.add_argument("--limit", type=_positive, default=None)
+    run.add_argument("--no-load-wait", action="store_true")
     report = commands.add_parser("report", help="print tables for result files")
     report.add_argument("--dataset", type=Path, default=DEFAULT_DATASET)
     report.add_argument("paths", type=Path, nargs="+", metavar="PATH")
@@ -106,7 +107,7 @@ async def _run_async(
         if env is None:
             _err(f"warning: cannot read the env of container {args.container}")
             env = {}
-        before = wait_for_load(sleep, loadavg)
+        before = loadavg() if args.no_load_wait else wait_for_load(sleep, loadavg)
         started_at = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
         git_sha, git_dirty = results.git_state(Path.cwd())
         try:

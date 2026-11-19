@@ -14,6 +14,7 @@ from error_classifier.evaluation.results import (
     ResultDoc,
     container_env,
     dataset_sha256,
+    model_run,
     prompt_sha256,
     read_result,
     render_report,
@@ -312,6 +313,16 @@ def test_run_waits_for_load(fake: Fake, tmp_path: Path) -> None:
     assert code == 0
     assert env.pauses == [15, 15]
     assert read_result(out).meta.loadavg_before == [1.0, 1.0, 1.0]
+
+
+def test_run_skips_the_load_wait(fake: Fake, tmp_path: Path) -> None:
+    out = tmp_path / "m.json"
+    code, env = _run(out, "--no-load-wait", loads=[3.0])
+    assert code == 0
+    assert env.pauses == []
+    doc = read_result(out)
+    assert doc.meta.loadavg_before == [3.0, 3.0, 3.0]
+    assert model_run(doc, ITEMS).loaded is True
 
 
 def test_run_stops_waiting_for_load_after_ten_minutes(fake: Fake, tmp_path: Path) -> None:

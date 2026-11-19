@@ -82,6 +82,7 @@ def _parser() -> argparse.ArgumentParser:
     run.add_argument("--compose-file", action="append", default=None)
     run.add_argument("--cold-start", action="store_true")
     run.add_argument("--skip-sequential", action="store_true")
+    run.add_argument("--no-load-wait", action="store_true")
     run.add_argument("--max-minutes", type=float, default=15.0)
     run.add_argument("--dataset", type=Path, default=DEFAULT_DATASET)
     run.add_argument("--out-dir", type=Path, default=Path("bench/results"))
@@ -221,7 +222,7 @@ def _run(
     except (DatasetError, OSError, ValueError) as exc:
         _err(str(exc))
         return 2
-    before = wait_for_load(sleep, loadavg)
+    before = loadavg() if args.no_load_wait else wait_for_load(sleep, loadavg)
     cold_start = cast(bool, args.cold_start)
     if cold_start:
         compose = [engine, "compose", *(a for f in files for a in ("-f", f))]

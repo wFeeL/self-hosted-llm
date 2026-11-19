@@ -161,6 +161,16 @@ def test_waiting_for_load_is_recorded(stack: Stack, tmp_path: Path) -> None:
     assert config.loaded is False
 
 
+def test_no_load_wait_skips_the_wait(stack: Stack, tmp_path: Path) -> None:
+    code, env = run_cli(stack, tmp_path, "--no-load-wait", loads=[3.0])
+
+    assert code == 0
+    assert env.pauses == []
+    config = read_bench(only_file(tmp_path)).summary.config
+    assert config.loadavg_before == [3.0, 3.0, 3.0]
+    assert config.loaded is True
+
+
 def test_busy_machine_marks_the_file_loaded(stack: Stack, tmp_path: Path) -> None:
     code, env = run_cli(stack, tmp_path, loads=[2.0])
 
