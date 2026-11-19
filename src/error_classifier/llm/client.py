@@ -39,6 +39,12 @@ def build_http_client(settings: Settings) -> httpx.AsyncClient:
     )
 
 
+def break_turn_tokens(text: str) -> str:
+    # llama-server parses special tokens inside message text, so "<|im_end|>" from an
+    # error or a model answer could close the turn; a JSON escape keeps the text readable.
+    return text.replace("<|", "<\\u007c").replace("|>", "\\u007c>")
+
+
 class LlmClient:
     def __init__(self, http: httpx.AsyncClient, model: str, probe_timeout_s: float) -> None:
         self._http = http
@@ -76,7 +82,9 @@ class LlmClient:
     ) -> ChatCompletion:
         body: dict[str, object] = {
             "model": self.model,
-            "messages": list(messages),
+            "messages": [
+                {"role": m["role"], "content": break_turn_tokens(m["content"])} for m in messages
+            ],
             "temperature": temperature,
             "max_tokens": max_tokens,
             "response_format": {
