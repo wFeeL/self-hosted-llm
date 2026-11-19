@@ -234,9 +234,11 @@ These steps target Ubuntu 24.04 LTS on a server without a GPU and use Docker Eng
 
 Use the table in [Choosing a model](#choosing-a-model): the default model needs a server with 8 GiB of RAM, and a 4 GiB server takes Qwen3.5-2B. Plan for at least 10 GB of free disk: the images and the model file take 3.3 GiB, and Docker, the build cache, logs and every further model need room too. All measurements were taken on 8 vCPU; with fewer cores the answers are slower.
 
-The server needs outbound HTTPS to the Docker package repository, Docker Hub (the `python` base image of `api`), `ghcr.io` (the llama.cpp image), PyPI (dependencies while `api` is built) and Hugging Face (the first download of the model). The registries and Hugging Face serve files from other hosts behind these addresses, so the two checks below only show that the entry points answer:
+The server needs outbound HTTPS to the Docker package repository, Docker Hub (the `python` base image of `api`), `ghcr.io` (the llama.cpp image), PyPI (dependencies while `api` is built) and Hugging Face (the first download of the model). The registries and Hugging Face serve files from other hosts behind these addresses, so the two checks below only show that the entry points answer. They and later steps need a few tools that a minimal image may lack:
 
 ```sh
+sudo apt-get update
+sudo apt-get install -y git curl tmux
 curl -sSI https://huggingface.co | head -1
 curl -sSI https://ghcr.io | head -1
 ```
@@ -260,7 +262,6 @@ newgrp docker
 ### 3. Get the code and the configuration
 
 ```sh
-sudo apt-get install -y git curl tmux
 git clone https://github.com/wFeeL/self-hosted-llm.git llm-error-classifier
 cd llm-error-classifier
 cp .env.example .env
@@ -672,7 +673,7 @@ uv run python scripts/evaluate.py report eval/results/*.json
 
 The runs used `podman compose` on a shared host: 8 vCPU AMD EPYC Rome (AVX2), 15 GB RAM, no GPU, with another project's stack of 11 containers running. Each file records the load average before the run.
 
-To measure another machine, start the stack with the debug port and wait for `/ready`, so the model is already in the volume (without it the cold start waits up to about 700 s and ends in a `.partial` file). Then run the benchmark from a new shell in which `.env` was not exported: `--cold-start` restarts the stack, and variables exported into the shell would override a corrected `.env`.
+To measure another machine, start the stack with the debug port and wait for `/ready`, so the model is already in the volume (without it the cold start waits up to about 700 s and ends in a `.partial` file). Then run the benchmark from a new shell in which `.env` was not exported: `--cold-start` restarts the stack, and variables exported into the shell would override a corrected `.env`. On macOS add `--no-load-wait` (see below).
 
 ```sh
 docker compose -f compose.yaml -f compose.debug.yaml up -d
@@ -688,9 +689,9 @@ uv run python scripts/bench.py report bench/results-docker/*.jsonl
 - The benchmark reads `/metrics` and `/props` of llama-server through the debug port; `--compose-file` is `compose.yaml` and `compose.debug.yaml` by default.
 - With `API_KEY` set in `.env`, export it in that shell (`export API_KEY=<the key>`); the benchmark reads it only from the environment.
 - `--max-minutes` (15 by default) stops the run into a `.partial` file, which `report` refuses. On a slow machine raise it, or add `--skip-sequential` to leave out the 50-request series.
-- Like the evaluation, the run first waits for a load average below 1.5; `--no-load-wait` skips the wait, and the table marks such a run as loaded.
+- Like the evaluation, the run first waits for a load average below 1.5; `--no-load-wait` skips the wait. Either way the table marks a run as loaded when the load average at its start was 1.5 or more.
 - The file records the CPU limit of `llm` from its cgroup. The CPU count and architecture in the first line of the table are those of the host, so under Docker Desktop they are the Mac's, not the VM's.
-- Exit code 3 means the stack was not ready or the build or the cold start failed, 4 means a `.partial` file; the reason is in the error output. A second run on the same day gets the time in its file name instead of replacing the first.
+- Exit code 3 means the API was not ready or `api` did not build, and nothing is written. Exit code 4 means the run stopped and wrote a `.partial` file, which includes a failed cold start; the reason is in the error output. A second run on the same day gets the time in its file name instead of replacing the first.
 
 <!-- bench-table:start -->
 Engine: podman, podman version 5.7.0; 8 vCPU x86_64; llm threads 6, context 8192, slots 2, batch 512.
