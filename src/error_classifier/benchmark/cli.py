@@ -91,6 +91,20 @@ def _parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _plain_path(out_dir: Path, started_at: str, model: str, complete: bool) -> Path:
+    suffix = "" if complete else ".partial"
+    return out_dir / f"{started_at[:10]}-{model}.jsonl{suffix}"
+
+
+def free_path(out_dir: Path, started_at: str, model: str, complete: bool) -> Path:
+    plain = _plain_path(out_dir, started_at, model, complete)
+    if not plain.exists():
+        return plain
+    suffix = "" if complete else ".partial"
+    clock = started_at[11:19].replace(":", "")  # "2026-11-20T15:29:07Z" -> "152907"
+    return out_dir / f"{started_at[:10]}-{model}-{clock}.jsonl{suffix}"
+
+
 def _progress(record: RequestRecord) -> None:
     _err(f"{record.phase} {record.index} {record.outcome} {record.wall_ms / 1000:.1f}s")
 
@@ -327,8 +341,11 @@ def _run(
         ),
         aggregates=aggregate(result.records, result.readings),
     )
-    name = f"{started_at[:10]}-{model}.jsonl"
-    path = cast(Path, args.out_dir) / (name if result.complete else name + ".partial")
+    out_dir = cast(Path, args.out_dir)
+    path = free_path(out_dir, started_at, model, result.complete)
+    plain = _plain_path(out_dir, started_at, model, result.complete)
+    if path != plain:
+        _err(f"warning: {plain} exists, wrote {path}")
     write_bench(path, result.records, result.readings, summary)
     if result.complete:
         return 0

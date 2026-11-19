@@ -200,6 +200,15 @@ def _check(files: Sequence[BenchFile]) -> None:
     for f in files:
         if not f.summary.config.complete:
             raise ValueError(f"{f.summary.config.model}: the run is incomplete")
+    first_seen: dict[str, str] = {}
+    for f in files:
+        config = f.summary.config
+        if config.model in first_seen:
+            raise ValueError(
+                f"{config.model}: two result files for one model, "
+                f"started at {first_seen[config.model]} and {config.started_at}"
+            )
+        first_seen[config.model] = config.started_at
     _same(files, "inputs", lambda c: c.inputs_sha256)
     _same(files, "engines", lambda c: c.engine)
     # The API image differs on purpose: it is built from the package that holds this script.

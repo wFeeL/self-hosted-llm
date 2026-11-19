@@ -279,3 +279,8 @@ def test_report_refuses_mixed_cpu_limits() -> None:
     files = [with_cpu_limit(alpha(), "400000 100000"), beta()]
     with pytest.raises(ValueError, match="llm CPU limits"):
         render_bench_report(files)
+
+
+def test_report_refuses_two_files_of_one_model() -> None:
+    with pytest.raises(ValueError, match="two result files"):
+        render_bench_report([alpha(), alpha()])

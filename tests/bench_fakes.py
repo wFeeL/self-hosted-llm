@@ -114,6 +114,7 @@ class Stack:
         self.cgroup_code = 0
         self.build_code = 0
         self.cpu = {"llm_c": 0, "api_c": 0}
+        self.docker_inspect = False  # {{.ImageName}} fails, the name is in {{.Config.Image}}
         router.get(f"{API}/ready").mock(side_effect=self._ready)
         router.get(f"{LLM}/health").mock(side_effect=self._health)
         router.get(f"{LLM}/metrics").mock(side_effect=self._metrics)
@@ -203,7 +204,13 @@ class Stack:
             if template == "{{.RestartCount}}":
                 return CommandResult(0, f"{self.restarts}\n")
             if template == "{{.ImageName}}":
+                if self.docker_inspect:
+                    return CommandResult(1, "")
                 return CommandResult(0, f"img-{container}:tag\n")
+            if template == "{{.Config.Image}}":
+                if self.docker_inspect:
+                    return CommandResult(0, f"cfg-{container}:tag\n")
+                return CommandResult(1, "")
             if template == "{{.Image}}":
                 return CommandResult(0, f"sha-{container}\n")
             env_map = self.api_env if container == "api_c" else self.llm_env
