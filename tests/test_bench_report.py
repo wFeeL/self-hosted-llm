@@ -281,6 +281,18 @@ def test_report_refuses_mixed_cpu_limits() -> None:
         render_bench_report(files)
 
 
+def started_at(bench: BenchFile, value: str) -> BenchFile:
+    config = bench.summary.config.model_copy(update={"started_at": value})
+    summary = bench.summary.model_copy(update={"config": config})
+    return dataclasses.replace(bench, summary=summary)
+
+
 def test_report_refuses_two_files_of_one_model() -> None:
-    with pytest.raises(ValueError, match="two result files"):
-        render_bench_report([alpha(), alpha()])
+    first = started_at(alpha(), "2026-11-15T10:00:00Z")
+    second = started_at(alpha(), "2026-11-16T11:30:00Z")
+    with pytest.raises(ValueError, match="two result files") as refused:
+        render_bench_report([first, second])
+    text = str(refused.value)
+    assert "alpha" in text
+    assert "2026-11-15T10:00:00Z" in text
+    assert "2026-11-16T11:30:00Z" in text
