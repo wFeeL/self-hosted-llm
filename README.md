@@ -21,7 +21,7 @@ until curl -fsS http://127.0.0.1:8000/ready; do sleep 5; done
 ```
 
 - The first start downloads about 2.5 GB of model weights into the `models` volume; watch it with `docker compose logs -f llm`.
-- `.env.example` limits `llm` to 6 CPUs, and Docker refuses to start a container with a limit above the number of cores. On a machine with fewer than 6 cores (`nproc`), or with exactly 6 if the host should keep a core for itself and `api`, take the values from the [sizing table](#3-get-the-code-and-the-configuration) first.
+- Check what Docker has with `docker info --format '{{.NCPU}} CPUs, {{.MemTotal}} bytes'`; under Docker Desktop these are the CPUs and memory of its VM (Settings, Resources). `.env.example` limits `llm` to 6 CPUs and 6.5 GiB and `api` to 1 CPU and 0.5 GiB. Docker refuses to start a container with a CPU limit above the number of CPUs, but it accepts memory limits larger than the memory it has, and then the stack runs into the OOM killer or swap under load. With fewer than 6 CPUs, or with exactly 6 if the host should keep a core for itself and `api`, or with less than about 8 GiB, take the values from the [sizing table](#3-get-the-code-and-the-configuration) first, or give the Docker Desktop VM more.
 - If the loop keeps waiting, check `docker compose ps` and `docker compose logs llm`; an unhealthy `llm` keeps `api` from starting.
 - Every `docker compose` command needs `.env` to be present.
 - If the network is slow and `llm` becomes unhealthy before the download ends, run `docker compose up -d` again after the download, or raise `LLM_START_PERIOD` in `.env` (1800 s by default).
@@ -213,7 +213,7 @@ All settings live in `.env`, copied from `.env.example`; compose passes each ser
 | API_BIND | 127.0.0.1 | Address the API port is published on; keep it local and put a reverse proxy in front |
 | API_PORT | 8000 | Published API port |
 | LLM_PROBE_TIMEOUT_S | 2.0 | Timeout of the readiness probe from the API to llama-server |
-| LOG_LEVEL | INFO | Log level of the API; error texts are never logged in full |
+| LOG_LEVEL | INFO | Log level of the API: DEBUG, INFO, WARNING or ERROR in any case; error texts are never logged in full |
 | MAX_CONCURRENCY | `LLAMA_ARG_N_PARALLEL` | Requests classified at the same time; compose sets it from `LLAMA_ARG_N_PARALLEL`, so it is not in `.env` |
 | MAX_QUEUE | 4 | Requests allowed to wait for a free slot, 0 to 1000; one more gets 429 `queue_full` at once |
 | QUEUE_TIMEOUT_S | 30 | Longest wait for a slot in seconds, above 0 up to 600; then 429 `queue_full`, and `Retry-After` is this value rounded up |
@@ -260,6 +260,7 @@ newgrp docker
 ### 3. Get the code and the configuration
 
 ```sh
+sudo apt-get install -y git curl tmux
 git clone https://github.com/wFeeL/self-hosted-llm.git llm-error-classifier
 cd llm-error-classifier
 cp .env.example .env
@@ -389,7 +390,7 @@ Of the model:
 - Severity is the weak field: the default model gets it exactly right in 38 of 60 rows and within one level in 59. The texts rarely say how many users are affected.
 - The category is right in 56 of 60 rows, and 52 when the label must match strictly; `permission_error` is the most confused (4 of 7).
 - `summary` and `suggested_action` are always English.
-- Email addresses in `summary` and `suggested_action` are replaced with `<email>`, and so is `user@host` notation such as `git@github.com`. Names, phone numbers and IP addresses are not masked, and the set has no rows to test them.
+- Email addresses in `summary` and `suggested_action` are replaced with `<email>`, including addresses in Cyrillic and other alphabets and `user@host` notation such as `git@github.com`. Names, phone numbers and IP addresses are not masked, and the set has no rows to test them.
 - Leaks were checked on the 7 rows that contain a secret, and injection on 2 of them; zero leaks there does not prove that the model never repeats a secret. The one email row now tests the mask rather than the model.
 - The evaluation set has 60 rows written and labelled by one person, so differences of a few rows between models are noise.
 
@@ -398,6 +399,7 @@ Of the configuration:
 - The context of 8192 tokens is split into 2 slots, so one request has about 4096 tokens. A text longer than `MAX_INPUT_CHARS` (3000 characters) keeps its first and last parts and loses the middle, which is replaced by a marker inside the limit, and the answer says `truncated: true`; a text that still does not fit the slot gets 400 `invalid_input`. The 3000-character input of the benchmark used 3232 of the 4096 tokens with the default model (3256 with Qwen3.5-2B); texts that tokenize more densely, or a higher `MAX_INPUT_CHARS`, can hit the 400.
 - Two requests are classified at a time; more wait in a queue of 4 for at most 30 s and then get 429. On 8 vCPU one request of the default model took 5.9 to 9.7 s in the 20-request series and a long one about 71 s. With `REQUEST_TIMEOUT_S=120` a long input whose first answer is invalid may not get its retry and ends in 504.
 - No streaming answers, no per-client rate limit, one model per stack; changing the model restarts `llm`.
+- llama-server reads special tokens inside message text, so an error text could try to close its turn with the chat markup of the model. The service breaks every `<|` and `|>` in the messages it sends, the input and a model answer returned for a retry, with a JSON escape, so the turn tokens of Qwen3-4B, Qwen3.5-2B, Granite 4.1 3B and Granite 4.0 1B (all of the form `<|...|>`) cannot be formed. Other added tokens of these models, such as `<tool_response>` or `<documents>`, stay as they are; they cannot close a turn, and the prompt treats them as text like any other input. A model whose chat markup has another form (for example `<start_of_turn>`) is not covered.
 - The only access control is the optional `API_KEY`; TLS comes from the reverse proxy.
 
 Of the measurements: everything was measured with podman on one shared 8 vCPU machine, not on Docker and not on a clean VPS; see the limitation lists in [Evaluation](#evaluation) and [Benchmarks](#benchmarks).
@@ -456,7 +458,7 @@ Package `error_classifier`. `Status` shows what exists now.
 
 ## Classification
 
-`POST /classify` takes `{"message": "<error text>"}` and answers with `category`, `severity`, `summary`, `suggested_action`, `model`, `latency_ms` and `truncated`. The answers are in English. The definitions below are the ones in the system prompt.
+`POST /classify` takes `{"message": "<error text>"}` and answers with `category`, `severity`, `summary`, `suggested_action`, `model`, `latency_ms` and `truncated`. `latency_ms` is the time of the classification itself, without the wait in the queue. The answers are in English. The definitions below are the ones in the system prompt.
 
 ### Categories
 
@@ -638,7 +640,18 @@ The default is `MODEL_ALIAS=qwen3-4b-instruct-2507-q4km` in `.env.example`, with
 
 ### Reproducing
 
-Start `llm` with the model in `.env` and the debug port, then run the set and the report. The runs above used `podman compose` and `--engine podman`; `--container` takes the name of the `llm` container from `compose ps`: `llm-error-classifier_llm_1` under podman-compose, `llm-error-classifier-llm-1` under Docker Compose v2.
+Start `llm` with the model in `.env` and the debug port, then run the set and the report. Under Docker Compose v2 the `llm` container is `llm-error-classifier-llm-1`:
+
+```sh
+docker compose -f compose.yaml -f compose.debug.yaml up -d llm
+set -a; . ./.env; set +a
+LLM_BASE_URL=http://127.0.0.1:8080/v1 LLM_MODEL=$MODEL_ALIAS \
+  uv run python scripts/evaluate.py run --engine docker \
+  --container llm-error-classifier-llm-1 --out eval/results-docker/$MODEL_ALIAS.json
+uv run python scripts/evaluate.py report eval/results-docker/*.json
+```
+
+The runs above used podman-compose, where the container is `llm-error-classifier_llm_1`:
 
 ```sh
 podman compose -f compose.yaml -f compose.debug.yaml up -d llm
@@ -649,13 +662,35 @@ LLM_BASE_URL=http://127.0.0.1:8080/v1 LLM_MODEL=$MODEL_ALIAS \
 uv run python scripts/evaluate.py report eval/results/*.json
 ```
 
-`--limit 3` makes a short smoke run into a `.partial` file. A full run took 4 to 13 minutes per model on the machine above.
+- Put runs from another machine into their own directory: `eval/results/` holds the runs this README reports, and a run written there replaces the file of its model.
+- Before the set the run waits until the load average of the host is below 1.5, for at most 10 minutes, and records it. `--no-load-wait` skips the wait where the load average means something else, as on macOS; the latency of a run that started above 1.5 is not used to choose between close models.
+- `--limit 3` makes a short smoke run into a `.partial` file. A full run took 4 to 13 minutes per model on the machine above; `--max-minutes` (15 by default) stops a longer run into a `.partial` file.
 
 ## Benchmarks
 
 `scripts/bench.py run` measures the whole service: a client on the host calls `POST /classify` through the published API port and reads CPU and memory from the cgroups of both containers at the start and end of each phase. One run is a cold start of the stack with the model already in the volume, 3 warm-up requests, 20 requests one at a time, one long input (3000 characters of base64), 50 requests one at a time (only for Qwen3.5-2B, the default at the time of the runs), two clients sending 10 requests each, and a burst of `MAX_CONCURRENCY + MAX_QUEUE + 1` requests to check the queue. Inputs are 20 rows of `eval/dataset.jsonl`. Raw files are in `bench/results/`, and `scripts/bench.py report bench/results/*.jsonl` prints the tables below; a test checks that they match.
 
 The runs used `podman compose` on a shared host: 8 vCPU AMD EPYC Rome (AVX2), 15 GB RAM, no GPU, with another project's stack of 11 containers running. Each file records the load average before the run.
+
+To measure another machine, start the stack with the debug port and wait for `/ready`, so the model is already in the volume (without it the cold start waits up to about 700 s and ends in a `.partial` file). Then run the benchmark from a new shell in which `.env` was not exported: `--cold-start` restarts the stack, and variables exported into the shell would override a corrected `.env`.
+
+```sh
+docker compose -f compose.yaml -f compose.debug.yaml up -d
+until curl -fsS http://127.0.0.1:8000/ready; do sleep 10; done
+uv run python scripts/bench.py run --engine docker \
+  --llm-container llm-error-classifier-llm-1 \
+  --api-container llm-error-classifier-api-1 \
+  --cold-start --max-minutes 30 --out-dir bench/results-docker
+uv run python scripts/bench.py report bench/results-docker/*.jsonl
+```
+
+- Keep each machine and engine in its own directory. `report` refuses files of different engines, machines, CPU limits of `llm` or compose versions, and two files of one model; a Docker file in `bench/results/` would break the tables below and their test.
+- The benchmark reads `/metrics` and `/props` of llama-server through the debug port; `--compose-file` is `compose.yaml` and `compose.debug.yaml` by default.
+- With `API_KEY` set in `.env`, export it in that shell (`export API_KEY=<the key>`); the benchmark reads it only from the environment.
+- `--max-minutes` (15 by default) stops the run into a `.partial` file, which `report` refuses. On a slow machine raise it, or add `--skip-sequential` to leave out the 50-request series.
+- Like the evaluation, the run first waits for a load average below 1.5; `--no-load-wait` skips the wait, and the table marks such a run as loaded.
+- The file records the CPU limit of `llm` from its cgroup. The CPU count and architecture in the first line of the table are those of the host, so under Docker Desktop they are the Mac's, not the VM's.
+- Exit code 3 means the stack was not ready or the build or the cold start failed, 4 means a `.partial` file; the reason is in the error output. A second run on the same day gets the time in its file name instead of replacing the first.
 
 <!-- bench-table:start -->
 Engine: podman, podman version 5.7.0; 8 vCPU x86_64; llm threads 6, context 8192, slots 2, batch 512.
