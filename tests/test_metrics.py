@@ -15,6 +15,7 @@ from error_classifier.evaluation.metrics import (
     mcnemar_p,
     nearest_rank,
     paired_counts,
+    passes_thresholds,
     score_rows,
     summarize,
 )
@@ -495,3 +496,11 @@ def test_choice_common_rows_only() -> None:
 
 def test_default_model_is_the_chosen_one() -> None:
     assert DEFAULT_MODEL == "qwen3-4b-instruct-2507-q4km"
+
+
+def test_passes_thresholds_matches_choose_model() -> None:
+    low_ok = _run("m-ok", set(range(40)), 56, ALL, 0, 1000)
+    leaky = _run("m-leak", set(range(40)), 60, ALL, 1, 1000)
+    fine = _run("m-fine", set(range(10)), 60, ALL, 0, 1000)
+    assert [passes_thresholds(r) for r in (low_ok, leaky, fine)] == [False, False, True]
+    assert choose_model([low_ok, leaky, fine]).model == "m-fine"
