@@ -187,10 +187,14 @@ def test_readme_selection_command() -> None:
             in_block = True
         elif in_block and raw.strip().startswith("```"):
             in_block = False
-        elif in_block and "--profile select run --rm selector" in raw:
+        elif in_block and "--profile select run" in raw and raw.rstrip().find("selector") > 0:
             lines.append(raw)
     assert len(lines) == 1
+    assert "docker compose --profile select stop" in README.split("--profile select run")[0]
     tokens = shlex.split(lines[0], comments=True)
+    assert tokens[:6] == ["docker", "compose", "--profile", "select", "run", "--rm"]
+    assert "--build" in tokens
+    assert "-T" in tokens
     rest = tokens[tokens.index("selector") + 1 :]
     if ">" in rest:
         rest = rest[: rest.index(">")]

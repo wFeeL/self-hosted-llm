@@ -102,3 +102,16 @@ def test_dockerfile_copies_selection_data() -> None:
     assert "**/*.partial" in ignored
     for needed in ("eval", "bench", "select"):
         assert needed not in ignored
+
+
+def test_selector_reads_the_router_presets_file() -> None:
+    block = service_block("selector")
+    assert "      - ./select:/select:ro" in block
+    assert "      PRESETS_PATH: /select/presets.ini" in block
+
+
+def test_llm_select_healthcheck_waits_for_the_router() -> None:
+    block = service_block("llm-select")
+    assert "      start_period: 30s" in block
+    assert "      retries: 24" in block
+    assert "      retries: 12" not in block
