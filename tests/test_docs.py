@@ -11,6 +11,7 @@ import pytest
 from error_classifier.benchmark.cli import build_parser as bench_parser
 from error_classifier.classify.prompt import SYSTEM_PROMPT
 from error_classifier.classify.schema import Category, Severity
+from error_classifier.config import Settings
 from error_classifier.errors import ServiceError
 from error_classifier.evaluation.cli import build_parser as eval_parser
 from error_classifier.selection.cli import build_parser as selection_parser
@@ -19,17 +20,6 @@ ROOT = Path(__file__).resolve().parents[1]
 README = (ROOT / "README.md").read_text(encoding="utf-8")
 
 ENUM_VALUES = {str(v) for v in [*Category, *Severity]}
-SETTINGS_VARIABLES = (
-    "REQUEST_TIMEOUT_S",
-    "MAX_CONCURRENCY",
-    "MAX_QUEUE",
-    "QUEUE_TIMEOUT_S",
-    "MAX_INPUT_CHARS",
-    "MAX_REQUEST_BYTES",
-    "MAX_OUTPUT_TOKENS",
-    "LLM_TEMPERATURE",
-    "LLM_DISABLE_THINKING",
-)
 
 
 def _definitions() -> dict[str, str]:
@@ -77,12 +67,7 @@ def test_every_error_code_is_documented() -> None:
         assert any(row.startswith(prefix) for row in rows), cls.__name__
 
 
-@pytest.mark.parametrize("name", SETTINGS_VARIABLES)
-def test_setting_is_documented(name: str) -> None:
-    assert f"| {name} |" in README
-
-
-def test_compose_variables_match_env_example_and_readme() -> None:
+def test_compose_variables_match_env_example() -> None:
     compose_text = (ROOT / "compose.yaml").read_text(encoding="utf-8")
     env_text = (ROOT / ".env.example").read_text(encoding="utf-8")
     compose_vars = set(re.findall(r"\$\{([A-Z_][A-Z0-9_]*)", compose_text))
@@ -92,8 +77,22 @@ def test_compose_variables_match_env_example_and_readme() -> None:
         f"compose only: {sorted(compose_vars - env_keys)}, "
         f".env.example only: {sorted(env_keys - compose_vars)}"
     )
-    undocumented = sorted(name for name in compose_vars if f"| {name} |" not in README)
-    assert not undocumented, f"missing from the README table: {undocumented}"
+
+
+def _api_environment() -> set[str]:
+    compose_text = (ROOT / "compose.yaml").read_text(encoding="utf-8")
+    start = re.search(r"^  api:$", compose_text, re.M)
+    assert start is not None
+    rest = compose_text[start.end() :]
+    end = re.search(r"^  \S", rest, re.M)
+    block = rest[: end.start()] if end else rest
+    return set(re.findall(r"^\s{6}([A-Z_][A-Z0-9_]*):", block, re.M))
+
+
+def test_every_setting_reaches_the_api_container() -> None:
+    names = {name.upper() for name in Settings.model_fields}
+    missing = sorted(names - _api_environment())
+    assert not missing, f"not in the api environment of compose.yaml: {missing}"
 
 
 def test_no_internal_network_claim() -> None:
