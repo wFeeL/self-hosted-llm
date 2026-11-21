@@ -289,3 +289,22 @@ def test_load_references_broken_bench_raises(tmp_path: Path) -> None:
     (bench / "2026-11-15-a.jsonl").write_text("not json\n", encoding="utf-8")
     with pytest.raises(ValueError, match="Expecting value"):
         load_references(["a"], tmp_path, ITEMS)
+
+
+def test_decide_nobody_passed_while_references_exist() -> None:
+    results = [_result("a", failures=("p95 unknown",))]
+    decision = decide(results, {"a": _ref("a", 40)})
+    assert decision.model is None
+    assert decision.reason == "no model passed the checks"
+    assert decision.status == {"a": "failed"}
+
+
+def test_decide_everything_skipped_points_to_the_memory_limit() -> None:
+    results = [skipped_result("a", "too big"), skipped_result("b", "too big")]
+    decision = decide(results, {"a": _ref("a", 40), "b": _ref("b", 40)})
+    assert decision.model is None
+    assert decision.reason == (
+        "no model passed the checks: all models were skipped by the reference memory; "
+        "use --all or raise LLM_MEM_LIMIT"
+    )
+    assert decision.status == {"a": "skipped", "b": "skipped"}

@@ -85,6 +85,14 @@ def decide(results: Sequence[CandidateResult], refs: Mapping[str, Reference]) ->
     status = {r.alias: _status(r) for r in results}
     passed = [r for r in results if r.passed]
     chosen: str | None = None
+    if not passed:
+        reason = "no model passed the checks"
+        if results and all(r.skipped is not None for r in results):
+            reason += (
+                ": all models were skipped by the reference memory; "
+                "use --all or raise LLM_MEM_LIMIT"
+            )
+        return Decision(None, reason, status)
     if any(refs[r.alias].run is not None for r in results):
         pool: list[tuple[CandidateResult, ModelRun]] = []
         for r in passed:
@@ -105,8 +113,6 @@ def decide(results: Sequence[CandidateResult], refs: Mapping[str, Reference]) ->
         chosen = next((r.alias for r, run in eligible if run.model == choice.model), None)
         reason = choice.reason
     else:
-        if not passed:
-            return Decision(None, "no model passed the checks", status)
         chosen = min(
             passed, key=lambda r: (r.p50_ms if r.p50_ms is not None else sys.maxsize, r.alias)
         ).alias

@@ -13,6 +13,7 @@ from error_classifier.classify.prompt import SYSTEM_PROMPT
 from error_classifier.classify.schema import Category, Severity
 from error_classifier.errors import ServiceError
 from error_classifier.evaluation.cli import build_parser as eval_parser
+from error_classifier.selection.cli import build_parser as selection_parser
 
 ROOT = Path(__file__).resolve().parents[1]
 README = (ROOT / "README.md").read_text(encoding="utf-8")
@@ -176,3 +177,24 @@ def test_readme_commands_parse(
             parser().parse_args(tokens[start + 1 :])
         except SystemExit as exc:
             pytest.fail(f"README command does not parse ({exc.code}): {line}")
+
+
+def test_readme_selection_command() -> None:
+    lines: list[str] = []
+    in_block = False
+    for raw in README.splitlines():
+        if re.fullmatch(r"\s*```sh\s*", raw):
+            in_block = True
+        elif in_block and raw.strip().startswith("```"):
+            in_block = False
+        elif in_block and "--profile select run --rm selector" in raw:
+            lines.append(raw)
+    assert len(lines) == 1
+    tokens = shlex.split(lines[0], comments=True)
+    rest = tokens[tokens.index("selector") + 1 :]
+    if ">" in rest:
+        rest = rest[: rest.index(">")]
+    try:
+        selection_parser().parse_args(rest)
+    except SystemExit as exc:
+        pytest.fail(f"README command does not parse ({exc.code}): {lines[0]}")
