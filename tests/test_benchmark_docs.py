@@ -95,7 +95,7 @@ COLUMNS = {
     "Вход в 3000 символов": ["Long input, s"],
     "Два клиента сразу, p95": ["Two clients p95, s"],
     "50 запросов подряд, p50 первых и последних 10": ["p50 first 10, s", "p50 last 10, s", "n ok"],
-    "Старт до `/ready`, модель уже в томе": ["Cold start to /ready, s"],
+    "Старт до `/ready`, модель в томе и page cache": ["Cold start to /ready, s"],
     "Генерация": ["Generation, tok/s"],
     "CPU `llm`, 100% на ядро": ["CPU llm, %"],
     "Память `llm` на пике": ["llm peak"],

@@ -41,7 +41,7 @@ def test_presets_bench_names_are_known() -> None:
 
 def test_small_model_block_matches_the_preset() -> None:
     block = marked_block(readme(), "small-model-env")
-    env = dict(re.findall(r"^([A-Z_]+)=(.*)$", block, re.MULTILINE))
+    env = dict(re.findall(r"^([A-Z_][A-Z0-9_]*)=(.*)$", block, re.MULTILINE))
     candidates = _candidates()
     alias = env["MODEL_ALIAS"]
     assert alias in candidates

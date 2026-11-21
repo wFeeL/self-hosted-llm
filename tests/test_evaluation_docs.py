@@ -48,7 +48,7 @@ def _default_tier_doc() -> ResultDoc:
 
 def _env_example() -> dict[str, str]:
     text = (ROOT / ".env.example").read_text(encoding="utf-8")
-    return dict(re.findall(r"^([A-Z_]+)=(.*)$", text, re.MULTILINE))
+    return dict(re.findall(r"^([A-Z_][A-Z0-9_]*)=(.*)$", text, re.MULTILINE))
 
 
 def test_four_results_exist() -> None:

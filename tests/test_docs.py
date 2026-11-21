@@ -213,7 +213,7 @@ def test_readme_sizing_first_row_is_env_example() -> None:
     first = [cell.strip() for cell in table[2].strip("|").split("|")]
     checked: list[str] = []
     for head, cell in zip(header[2:], first[2:], strict=True):
-        names = re.findall(r"[A-Z][A-Z_]+", head)
+        names = re.findall(r"[A-Z_][A-Z0-9_]*", head)
         values = cell.split(" / ")
         assert len(names) == len(values), head
         for name, value in zip(names, values, strict=True):
@@ -257,3 +257,7 @@ def test_readme_selection_command() -> None:
         selection_parser().parse_args(rest)
     except SystemExit as exc:
         pytest.fail(f"README command does not parse ({exc.code}): {lines[0]}")
+
+
+def test_env_example_keeps_names_with_digits() -> None:
+    assert "SELECT_TARGET_P95_S" in env_example()
