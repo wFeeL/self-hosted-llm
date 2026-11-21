@@ -353,6 +353,15 @@ async def test_check_invisible_process_and_loaded_status_is_fine(tmp_path: Path)
     assert not result.restarted
     assert result.failures == []
     assert result.hf_file_seen is None
+    assert result.warnings == [
+        "runtime process not visible: the file and the memory were not verified"
+    ]
+
+
+async def test_check_visible_process_has_no_visibility_warning(tmp_path: Path) -> None:
+    env = _env(tmp_path)
+    result = await env.run()
+    assert result.warnings == []
 
 
 async def test_check_slow_fails(tmp_path: Path) -> None:

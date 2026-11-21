@@ -38,6 +38,11 @@ ITEMS = [
 ]
 
 
+CAND_A = Candidate("a", "org/a", "a.gguf", False)
+CAND_B = Candidate("b", "org/b", "b.gguf", False)
+RUNTIME_A = {"LLAMA_ARG_HF_REPO": "org/a", "LLAMA_ARG_HF_FILE": "a.gguf"}
+
+
 def _summary(ok: int, first: int, both: int, leaks: int) -> EvalSummary:
     return summarize([], []).model_copy(
         update={
@@ -148,7 +153,7 @@ def _meta(**overrides: object) -> RunMeta:
         "model": "a",
         "engine": "podman",
         "container": "llm-1",
-        "runtime_env": {},
+        "runtime_env": RUNTIME_A,
         "runtime_build": None,
         "model_path": None,
         "total_slots": None,
@@ -223,34 +228,34 @@ class Root:
 
 def test_load_references_no_file(tmp_path: Path) -> None:
     Root(tmp_path)
-    ref = load_references(["a"], tmp_path, ITEMS)["a"]
+    ref = load_references([CAND_A], tmp_path, ITEMS)["a"]
     assert ref == Reference(None, "no reference run", None, {})
 
 
 def test_load_references_incomplete(tmp_path: Path) -> None:
     Root(tmp_path).write_reference("a", complete=False)
-    ref = load_references(["a"], tmp_path, ITEMS)["a"]
+    ref = load_references([CAND_A], tmp_path, ITEMS)["a"]
     assert ref.run is None
     assert ref.note == "reference run is incomplete"
 
 
 def test_load_references_stale_prompt(tmp_path: Path) -> None:
     Root(tmp_path).write_reference("a", prompt_sha256="0" * 64)
-    ref = load_references(["a"], tmp_path, ITEMS)["a"]
+    ref = load_references([CAND_A], tmp_path, ITEMS)["a"]
     assert ref.run is None
     assert ref.note == "reference is stale (prompt changed)"
 
 
 def test_load_references_stale_dataset(tmp_path: Path) -> None:
     Root(tmp_path).write_reference("a", dataset_sha256="0" * 64)
-    ref = load_references(["a"], tmp_path, ITEMS)["a"]
+    ref = load_references([CAND_A], tmp_path, ITEMS)["a"]
     assert ref.run is None
     assert ref.note == "reference is stale (dataset changed)"
 
 
 def test_load_references_good(tmp_path: Path) -> None:
     Root(tmp_path).write_reference("a")
-    ref = load_references(["a"], tmp_path, ITEMS)["a"]
+    ref = load_references([CAND_A], tmp_path, ITEMS)["a"]
     assert ref.run is not None
     assert ref.run.model == "a"
     assert ref.note is None
@@ -267,9 +272,9 @@ def test_load_references_takes_the_newest_bench(tmp_path: Path) -> None:
         ("2026-11-15-other.jsonl", GIB),
     ):
         model = "other" if "other" in name else "a"
-        f = bench_file(model, conf={"model_file_size": size})
+        f = bench_file(model, conf={"model_file_size": size, "runtime_env": RUNTIME_A})
         write_bench(bench / name, f.records, f.readings, f.summary)
-    refs = load_references(["a", "b"], tmp_path, ITEMS)
+    refs = load_references([CAND_A, CAND_B], tmp_path, ITEMS)
     assert refs["a"].need_bytes == 4 * GIB
     assert refs["b"].need_bytes is None
     assert refs["b"].note == "no reference run"
@@ -279,7 +284,7 @@ def test_load_references_broken_files_raise(tmp_path: Path) -> None:
     Root(tmp_path)
     (tmp_path / "eval" / "results" / "a.json").write_text("{", encoding="utf-8")
     with pytest.raises(ValueError, match="Invalid JSON"):
-        load_references(["a"], tmp_path, ITEMS)
+        load_references([CAND_A], tmp_path, ITEMS)
 
 
 def test_load_references_broken_bench_raises(tmp_path: Path) -> None:
@@ -288,7 +293,7 @@ def test_load_references_broken_bench_raises(tmp_path: Path) -> None:
     bench.mkdir(parents=True)
     (bench / "2026-11-15-a.jsonl").write_text("not json\n", encoding="utf-8")
     with pytest.raises(ValueError, match="Expecting value"):
-        load_references(["a"], tmp_path, ITEMS)
+        load_references([CAND_A], tmp_path, ITEMS)
 
 
 def test_decide_nobody_passed_while_references_exist() -> None:
@@ -308,3 +313,32 @@ def test_decide_everything_skipped_points_to_the_memory_limit() -> None:
         "use --all or raise LLM_MEM_LIMIT"
     )
     assert decision.status == {"a": "skipped", "b": "skipped"}
+
+
+@pytest.mark.parametrize(
+    "runtime_env",
+    [
+        {"LLAMA_ARG_HF_REPO": "org/other", "LLAMA_ARG_HF_FILE": "a.gguf"},
+        {"LLAMA_ARG_HF_REPO": "org/a", "LLAMA_ARG_HF_FILE": "a-Q8_0.gguf"},
+        {"LLAMA_ARG_THREADS": "6"},
+    ],
+)
+def test_load_references_reference_for_another_file(
+    tmp_path: Path, runtime_env: dict[str, str]
+) -> None:
+    Root(tmp_path).write_reference("a", runtime_env=runtime_env)
+    ref = load_references([CAND_A], tmp_path, ITEMS)["a"]
+    assert ref.run is None
+    assert ref.note == "reference is for another file"
+
+
+def test_load_references_bench_for_another_file_gives_no_need(tmp_path: Path) -> None:
+    Root(tmp_path).write_reference("a")
+    other = {"LLAMA_ARG_HF_REPO": "org/a", "LLAMA_ARG_HF_FILE": "a-Q8_0.gguf"}
+    f = bench_file("a", conf={"model_file_size": GIB, "runtime_env": other})
+    write_bench(
+        tmp_path / "bench" / "results" / "2026-11-15-a.jsonl", f.records, f.readings, f.summary
+    )
+    ref = load_references([CAND_A], tmp_path, ITEMS)["a"]
+    assert ref.need_bytes is None
+    assert ref.run is not None

@@ -31,22 +31,36 @@ class Decision:
     status: dict[str, str]
 
 
-def _bench_needs(root: Path) -> dict[str, int | None]:
-    needs: dict[str, int | None] = {}
+def _runs_file(env: Mapping[str, str], candidate: Candidate) -> bool:
+    return (
+        env.get("LLAMA_ARG_HF_REPO") == candidate.hf_repo
+        and env.get("LLAMA_ARG_HF_FILE") == candidate.hf_file
+    )
+
+
+def _bench_needs(root: Path) -> dict[str, tuple[int | None, Mapping[str, str]]]:
+    needs: dict[str, tuple[int | None, Mapping[str, str]]] = {}
     # File names start with the date, so the last one of a model is the newest.
     for path in sorted((root / "bench" / "results").glob("*.jsonl")):
         bench = read_bench(path)
-        needs[bench.summary.config.model] = llm_need_bytes(bench)
+        config = bench.summary.config
+        needs[config.model] = (llm_need_bytes(bench), config.runtime_env)
     return needs
 
 
 def _reference(
-    alias: str, root: Path, items: Sequence[EvalItem], dataset_hash: str, need: int | None
+    candidate: Candidate,
+    root: Path,
+    items: Sequence[EvalItem],
+    dataset_hash: str,
+    need: int | None,
 ) -> Reference:
-    path = root / "eval" / "results" / f"{alias}.json"
+    path = root / "eval" / "results" / f"{candidate.alias}.json"
     if not path.exists():
         return Reference(None, "no reference run", need)
     doc = read_result(path)
+    if not _runs_file(doc.meta.runtime_env, candidate):
+        return Reference(None, "reference is for another file", need)
     if not doc.meta.complete:
         return Reference(None, "reference run is incomplete", need)
     if doc.meta.dataset_sha256 != dataset_hash:
@@ -60,13 +74,18 @@ def _reference(
 
 
 def load_references(
-    aliases: Sequence[str], root: Path, items: Sequence[EvalItem]
+    candidates: Sequence[Candidate], root: Path, items: Sequence[EvalItem]
 ) -> dict[str, Reference]:
-    needs = _bench_needs(root)
+    benches = _bench_needs(root)
     dataset_hash = dataset_sha256(root / DEFAULT_DATASET)
-    return {
-        alias: _reference(alias, root, items, dataset_hash, needs.get(alias)) for alias in aliases
-    }
+    refs: dict[str, Reference] = {}
+    for candidate in candidates:
+        need: int | None = None
+        bench = benches.get(candidate.alias)
+        if bench is not None and _runs_file(bench[1], candidate):
+            need = bench[0]
+        refs[candidate.alias] = _reference(candidate, root, items, dataset_hash, need)
+    return refs
 
 
 def prefilter(candidate: Candidate, ref: Reference, mem_limit: int, check_all: bool) -> str | None:

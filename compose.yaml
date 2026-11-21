@@ -110,7 +110,8 @@ services:
       test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
       interval: 5s
       timeout: 5s
-      retries: 12
+      retries: 24
+      start_period: 30s
     cpus: ${LLM_CPUS:-6}
     mem_limit: ${LLM_MEM_LIMIT:-6656m}
     memswap_limit: ${LLM_MEM_LIMIT:-6656m}
@@ -124,6 +125,7 @@ services:
     profiles: ["select"]
     command: ["/app/.venv/bin/python", "-m", "error_classifier.selection"]
     environment:
+      PRESETS_PATH: /select/presets.ini
       SELECT_BASE_URL: http://llm-select:8080
       MAIN_LLM_URL: http://llm:8080
       SELECT_LOAD_TIMEOUT_S: ${SELECT_LOAD_TIMEOUT_S:-1800}
@@ -143,6 +145,7 @@ services:
     pid: "service:llm-select"
     volumes:
       - models:/models:ro
+      - ./select:/select:ro
     depends_on:
       llm-select:
         condition: service_healthy

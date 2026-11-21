@@ -157,6 +157,7 @@ def test_render_report_has_columns_and_choice() -> None:
     assert "MODEL_ALIAS=alpha" in text
     assert "LLAMA_ARG_HF_FILE=alpha.gguf" in text
     assert "AMD EPYC 7282" in text
+    assert "the model name check confirms the router's routing only" in text
     assert "smoke catches only gross failures" in text
     assert "judgement" in text
     assert "Warnings" not in text

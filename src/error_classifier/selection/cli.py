@@ -76,8 +76,15 @@ def _emit(
     results: Sequence[CandidateResult],
     refs: dict[str, Reference],
     out: TextIO,
+    interrupted: str | None = None,
 ) -> Decision:
     decision = decide(results, refs)
+    if interrupted is not None:
+        # A partial run must not look like a choice, so nothing is chosen from it.
+        status = {a: "passed" if s == "chosen" else s for a, s in decision.status.items()}
+        for candidate in candidates:
+            status.setdefault(candidate.alias, "not checked")
+        decision = Decision(None, f"selection interrupted: {interrupted}", status)
     if args.json:
         text = report_json(ctx, results, refs, decision)
     else:
@@ -100,8 +107,8 @@ async def _check_all(
     models_dir: Path,
     clock: Callable[[], float],
     log: Callable[[str], None],
-) -> bool:
-    """Run every candidate; False means the router would not unload a model."""
+) -> str | None:
+    """Run every candidate; a text means the router would not unload a model."""
     smoke = smoke_items(items)
     long_text = long_input()
     limits = CheckLimits(
@@ -140,8 +147,8 @@ async def _check_all(
         results.append(result)
         if not await router.unload(alias):
             log(f"{alias}: the router did not unload the model in time")
-            return False
-    return True
+            return f"the router did not unload {alias} in time"
+    return None
 
 
 async def run_selection(
@@ -165,7 +172,7 @@ async def run_selection(
         parse_size(settings.api_mem_limit)
         candidates = load_presets(settings.presets_path)
         items = load_dataset(settings.data_root / DEFAULT_DATASET)
-        refs = load_references([c.alias for c in candidates], settings.data_root, items)
+        refs = load_references(candidates, settings.data_root, items)
     except (ValueError, OSError) as exc:
         log(f"configuration error: {_describe(exc)}")
         return EXIT_CONFIG
@@ -183,27 +190,34 @@ async def run_selection(
         router = RouterClient(router_http, sleep=sleep, clock=clock)
         try:
             statuses = await router.statuses()
-            for candidate in candidates:
-                if candidate.alias not in statuses:
-                    log(f"configuration error: the router does not list preset {candidate.alias}")
-                    return EXIT_CONFIG
+            wanted = [c.alias for c in candidates]
+            missing = [a for a in wanted if a not in statuses]
+            extra = [a for a in statuses if a not in wanted]
+            if missing or extra:
+                for alias in missing:
+                    log(f"configuration error: the router does not list preset {alias}")
+                for alias in extra:
+                    log(
+                        f"configuration error: the router has preset {alias}, the selector does not"
+                    )
+                return EXIT_CONFIG
             for alias, status in statuses.items():
                 if status.value != "unloaded" and not await router.unload(alias):
                     log(f"{alias}: the router did not unload a model left from an earlier run")
                     return EXIT_ROUTER
             host = read_host(proc, models_dir, cpus)
-            unloaded = await _check_all(
+            interrupted = await _check_all(
                 settings, args, router, candidates, refs, items, results,
                 mem_limit=mem_limit, proc=proc, models_dir=models_dir, clock=clock, log=log,
             )  # fmt: skip
         except RouterError as exc:
             log(f"router error: {exc}")
-            unloaded = False
+            interrupted = f"router error: {exc}"
     ctx_host = host or read_host(proc, models_dir, cpus)
     ctx = RunContext(ctx_host, settings, now().strftime("%Y-%m-%dT%H:%M:%SZ"))
-    if not unloaded:
+    if interrupted is not None:
         if results:
-            _emit(args, ctx, candidates, results, refs, out)
+            _emit(args, ctx, candidates, results, refs, out, interrupted)
         return EXIT_ROUTER
     decision = _emit(args, ctx, candidates, results, refs, out)
     return EXIT_CHOSEN if decision.model is not None else EXIT_NONE

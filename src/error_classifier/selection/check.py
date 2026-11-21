@@ -253,6 +253,8 @@ async def check_candidate(
         restarted = status is None or status.value != "loaded" or status.failed
 
     warnings: list[str] = []
+    if child is None:
+        warnings.append("runtime process not visible: the file and the memory were not verified")
     file_size = model_file_size(models_dir, candidate.hf_repo, candidate.hf_file)
     if file_size is None:
         warnings.append("model file not found in the models volume")
