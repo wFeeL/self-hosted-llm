@@ -5,6 +5,7 @@ import logging
 import os
 import random
 import time
+from collections.abc import Awaitable
 from pathlib import Path
 
 import anyio
@@ -60,6 +61,26 @@ async def _wait_for_free_slots(limit_s: float, what: str) -> float:
             if time.perf_counter() - started > limit_s:
                 pytest.fail(f"llama-server slots still busy {limit_s:.1f} s {what}")
             await asyncio.sleep(0.25)
+
+
+async def _run_until_busy[T](work: Awaitable[T]) -> tuple[T, bool]:
+    # A 504 or a disconnect proves nothing about cancellation if the prompt never reached a slot.
+    task = asyncio.ensure_future(work)
+    busy = False
+    async with httpx.AsyncClient(timeout=5) as http:
+        while not task.done():
+            slots = (await http.get(f"{LLM_ROOT}/slots")).json()
+            busy = busy or any(slot["is_processing"] for slot in slots)
+            await asyncio.wait({task}, timeout=0.25)
+    return await task, busy
+
+
+def _require_long_reference(reference: float, before: float) -> None:
+    if reference < 2 * before:
+        pytest.fail(
+            f"the reference run took {reference:.1f} s, "
+            "too short to tell a cancelled prompt from a finished one"
+        )
 
 
 _REFERENCE_S: dict[str, float] = {}
@@ -119,24 +140,29 @@ async def test_second_request_gets_429(serve: Serve) -> None:
 
 async def test_deadline_gives_504_and_frees_the_slot(serve: Serve) -> None:
     reference = await _reference_s(serve)
+    _require_long_reference(reference, 3)
     await _wait_for_free_slots(reference, "after the previous test")
     app = create_app(_live_settings(request_timeout_s=3))
     async with serve(app) as client:
         started = time.perf_counter()
-        response = await _classify(client, "deadline", _base64_message(11))
+        response, busy = await _run_until_busy(_classify(client, "deadline", _base64_message(11)))
         elapsed = time.perf_counter() - started
         assert response.status_code == 504
         assert response.json()["error"]["code"] == "llm_timeout"
         assert elapsed <= 4.5
+        if not busy:
+            pytest.fail("the request never reached llama-server: no slot was busy before the 504")
+        budget = (reference - elapsed) / 2
         released = await _wait_for_free_slots(reference, "after the 504")
-    assert released <= reference / 2, (
-        f"slot freed {released:.1f} s after the 504, a full run takes {reference:.1f} s: "
-        "llama-server did not cancel the prompt"
+    assert released <= budget, (
+        f"slot busy {released:.1f} s after the 504, budget {budget:.1f} s, "
+        f"a full run of the same input takes {reference:.1f} s"
     )
 
 
 async def test_disconnect_frees_the_slot(serve: Serve, caplog: pytest.LogCaptureFixture) -> None:
     reference = await _reference_s(serve)
+    _require_long_reference(reference, 3)
     await _wait_for_free_slots(reference, "after the previous test")
     caplog.set_level(logging.INFO, logger="error_classifier")
 
@@ -159,10 +185,15 @@ async def test_disconnect_frees_the_slot(serve: Serve, caplog: pytest.LogCapture
             request = asyncio.create_task(
                 client.post("/classify", json={"message": _base64_message(12)})
             )
-            await asyncio.sleep(3)
+            _, busy = await _run_until_busy(asyncio.sleep(3))
             request.cancel()
             with pytest.raises(asyncio.CancelledError):
                 await request
+        left = time.perf_counter()
+        if not busy:
+            pytest.fail(
+                "the request never reached llama-server: no slot was busy before the client left"
+            )
         with anyio.move_on_after(10):
             while not closed():  # noqa: ASYNC110
                 await asyncio.sleep(0.1)
@@ -170,10 +201,12 @@ async def test_disconnect_frees_the_slot(serve: Serve, caplog: pytest.LogCapture
             pytest.fail(
                 "the API did not log outcome=client_closed within 10 s after the client left"
             )
-        released = await _wait_for_free_slots(reference, "after the client left")
-        assert released <= reference / 2, (
-            f"slot freed {released:.1f} s after the client left, a full run takes "
-            f"{reference:.1f} s: llama-server did not cancel the prompt"
+        await _wait_for_free_slots(reference, "after the client left")
+        released = time.perf_counter() - left
+        budget = (reference - 3) / 2
+        assert released <= budget, (
+            f"slot busy {released:.1f} s after the client left, budget {budget:.1f} s, "
+            f"a full run of the same input takes {reference:.1f} s"
         )
     finally:
         server.should_exit = True
