@@ -7,6 +7,9 @@ COPY pyproject.toml uv.lock ./
 RUN uv sync --frozen --no-dev --no-install-project
 COPY src ./src
 RUN uv sync --frozen --no-dev
+COPY eval ./eval
+COPY bench/results ./bench/results
+COPY select ./select
 RUN useradd --system --uid 10001 app
 USER app
 EXPOSE 8000
