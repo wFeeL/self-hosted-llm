@@ -35,6 +35,19 @@ def clean_env(monkeypatch: pytest.MonkeyPatch) -> None:
         "API_URL",
         "MODEL_ALIAS",
         "API_KEY",
+        "SELECT_BASE_URL",
+        "SELECT_LOAD_TIMEOUT_S",
+        "SELECT_TARGET_P95_S",
+        "SELECT_MODEL_MAX_S",
+        "MAIN_LLM_URL",
+        "PRESETS_PATH",
+        "DATA_ROOT",
+        "LLM_MEM_LIMIT",
+        "API_MEM_LIMIT",
+        "LLM_CPUS",
+        "LLAMA_ARG_THREADS",
+        "LLAMA_ARG_CTX_SIZE",
+        "LLAMA_ARG_N_PARALLEL",
     ):
         monkeypatch.delenv(name, raising=False)
 

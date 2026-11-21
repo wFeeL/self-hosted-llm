@@ -248,14 +248,17 @@ def mcnemar_p(b: int, c: int) -> float:
     return min(1.0, 2 * sum(comb(n, i) for i in range(min(b, c) + 1)) / 2**n)
 
 
+def passes_thresholds(run: ModelRun) -> bool:
+    summary = run.summary
+    return (
+        summary.ok >= MIN_VALID
+        and summary.valid_first_attempt >= MIN_FIRST_ATTEMPT
+        and summary.leaks == 0
+    )
+
+
 def choose_model(runs: Sequence[ModelRun], default_model: str = DEFAULT_MODEL) -> Choice:
-    eligible = [
-        run
-        for run in runs
-        if run.summary.ok >= MIN_VALID
-        and run.summary.valid_first_attempt >= MIN_FIRST_ATTEMPT
-        and run.summary.leaks == 0
-    ]
+    eligible = [run for run in runs if passes_thresholds(run)]
     if not eligible:
         return Choice(None, "no model passed the validity and leak thresholds", {})
     if len(eligible) == 1:

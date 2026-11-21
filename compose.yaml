@@ -77,5 +77,84 @@ services:
     restart: unless-stopped
     logging: *logging
 
+  llm-select:
+    image: ghcr.io/ggml-org/llama.cpp:server-b12352@sha256:998e17af1ae710081e5a6e6db962f29dd81db31b33eccf281f1767ff0f7729c7
+    profiles: ["select"]
+    command:
+      - "--models-preset"
+      - "/select/presets.ini"
+      - "--models-max"
+      - "1"
+      - "--host"
+      - "0.0.0.0"
+      - "--port"
+      - "8080"
+      - "--ctx-size"
+      - "${LLAMA_ARG_CTX_SIZE:-8192}"
+      - "--parallel"
+      - "${LLAMA_ARG_N_PARALLEL:-2}"
+      - "--threads"
+      - "${LLAMA_ARG_THREADS:-6}"
+      - "--batch-size"
+      - "${LLAMA_ARG_BATCH:-512}"
+      - "--cache-ram"
+      - "${LLAMA_ARG_CACHE_RAM:-0}"
+      - "--no-mmproj-auto"
+      - "--no-models-autoload"
+    environment:
+      LLAMA_CACHE: /models
+    volumes:
+      - models:/models
+      - ./select:/select:ro
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 5s
+      timeout: 5s
+      retries: 24
+      start_period: 30s
+    cpus: ${LLM_CPUS:-6}
+    mem_limit: ${LLM_MEM_LIMIT:-6656m}
+    memswap_limit: ${LLM_MEM_LIMIT:-6656m}
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: [ALL]
+    logging: *logging
+
+  selector:
+    build: .
+    image: llm-error-classifier-api:local
+    profiles: ["select"]
+    command: ["/app/.venv/bin/python", "-m", "error_classifier.selection"]
+    environment:
+      PRESETS_PATH: /select/presets.ini
+      SELECT_BASE_URL: http://llm-select:8080
+      MAIN_LLM_URL: http://llm:8080
+      SELECT_LOAD_TIMEOUT_S: ${SELECT_LOAD_TIMEOUT_S:-1800}
+      SELECT_TARGET_P95_S: ${SELECT_TARGET_P95_S:-30}
+      SELECT_MODEL_MAX_S: ${SELECT_MODEL_MAX_S:-1200}
+      REQUEST_TIMEOUT_S: ${REQUEST_TIMEOUT_S:-120}
+      QUEUE_TIMEOUT_S: ${QUEUE_TIMEOUT_S:-30}
+      MAX_INPUT_CHARS: ${MAX_INPUT_CHARS:-3000}
+      MAX_OUTPUT_TOKENS: ${MAX_OUTPUT_TOKENS:-256}
+      LLM_TEMPERATURE: ${LLM_TEMPERATURE:-0.0}
+      LLM_MEM_LIMIT: ${LLM_MEM_LIMIT:-6656m}
+      API_MEM_LIMIT: ${API_MEM_LIMIT:-512m}
+      LLM_CPUS: ${LLM_CPUS:-6}
+      LLAMA_ARG_THREADS: ${LLAMA_ARG_THREADS:-6}
+      LLAMA_ARG_CTX_SIZE: ${LLAMA_ARG_CTX_SIZE:-8192}
+      LLAMA_ARG_N_PARALLEL: ${LLAMA_ARG_N_PARALLEL:-2}
+    pid: "service:llm-select"
+    volumes:
+      - models:/models:ro
+      - ./select:/select:ro
+    depends_on:
+      llm-select:
+        condition: service_healthy
+    cpus: ${API_CPUS:-1}
+    mem_limit: ${API_MEM_LIMIT:-512m}
+    memswap_limit: ${API_MEM_LIMIT:-512m}
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: [ALL]
+    logging: *logging
+
 volumes:
   models:

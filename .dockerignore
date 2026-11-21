@@ -7,3 +7,4 @@
 tests
 docs
 *.gguf
+**/*.partial
