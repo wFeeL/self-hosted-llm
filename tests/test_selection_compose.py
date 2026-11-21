@@ -90,3 +90,15 @@ def test_selector_profile_pid_and_volume() -> None:
 def test_llm_and_api_have_no_profile() -> None:
     for name in ("llm", "api"):
         assert "profiles" not in service_block(name)
+
+
+def test_dockerfile_copies_selection_data() -> None:
+    lines = (ROOT / "Dockerfile").read_text(encoding="utf-8").splitlines()
+    user = lines.index("USER app")
+    src = lines.index("COPY src ./src")
+    for copy in ("COPY eval ./eval", "COPY bench/results ./bench/results", "COPY select ./select"):
+        assert src < lines.index(copy) < user, copy
+    ignored = (ROOT / ".dockerignore").read_text(encoding="utf-8").splitlines()
+    assert "**/*.partial" in ignored
+    for needed in ("eval", "bench", "select"):
+        assert needed not in ignored
