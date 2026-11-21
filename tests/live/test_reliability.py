@@ -4,6 +4,7 @@ import json
 import logging
 import os
 import random
+import sys
 import time
 from collections.abc import Awaitable
 from pathlib import Path
@@ -35,6 +36,14 @@ pytestmark = [pytest.mark.live, pytest.mark.anyio]
 
 LLM_ROOT = LLM_URL.rstrip("/").removesuffix("/v1")
 SHORT_MESSAGE = "TypeError: Cannot read properties of undefined (reading 'map')"
+
+# On macOS a cancelled httpx request leaves its socket open, so a service run on the host never
+# tells llama-server to stop; the same service inside the Linux container of the stack does.
+_HOST_CANNOT_CANCEL = pytest.mark.xfail(
+    sys.platform == "darwin",
+    reason="httpx on macOS does not close a cancelled connection (Python 3.14.10, 2026-11-21)",
+    run=False,
+)
 
 
 def _live_settings(**changes: object) -> Settings:
@@ -138,6 +147,7 @@ async def test_second_request_gets_429(serve: Serve) -> None:
         assert body[field]
 
 
+@_HOST_CANNOT_CANCEL
 async def test_deadline_gives_504_and_frees_the_slot(serve: Serve) -> None:
     reference = await _reference_s(serve)
     _require_long_reference(reference, 3)
@@ -160,6 +170,7 @@ async def test_deadline_gives_504_and_frees_the_slot(serve: Serve) -> None:
     )
 
 
+@_HOST_CANNOT_CANCEL
 async def test_disconnect_frees_the_slot(serve: Serve, caplog: pytest.LogCaptureFixture) -> None:
     reference = await _reference_s(serve)
     _require_long_reference(reference, 3)
