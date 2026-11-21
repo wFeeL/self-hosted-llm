@@ -45,18 +45,39 @@ def _live_settings(**changes: object) -> Settings:
     return Settings.model_validate({**values, **changes})
 
 
-def _base64_message() -> str:
-    return base64.b64encode(random.Random(7).randbytes(2400)).decode()[:3000]
+# Each test gets its own seed so the slot's prompt cache cannot hand the next request a prefix.
+def _base64_message(seed: int) -> str:
+    return base64.b64encode(random.Random(seed).randbytes(2400)).decode()[:3000]
 
 
-async def _wait_for_free_slots(limit_s: float) -> None:
-    with anyio.fail_after(limit_s):
-        async with httpx.AsyncClient(timeout=5) as http:
-            while True:
-                slots = (await http.get(f"{LLM_ROOT}/slots")).json()
-                if not any(slot["is_processing"] for slot in slots):
-                    return
-                await asyncio.sleep(0.25)
+async def _wait_for_free_slots(limit_s: float, what: str) -> float:
+    started = time.perf_counter()
+    async with httpx.AsyncClient(timeout=5) as http:
+        while True:
+            slots = (await http.get(f"{LLM_ROOT}/slots")).json()
+            if not any(slot["is_processing"] for slot in slots):
+                return time.perf_counter() - started
+            if time.perf_counter() - started > limit_s:
+                pytest.fail(f"llama-server slots still busy {limit_s:.1f} s {what}")
+            await asyncio.sleep(0.25)
+
+
+_REFERENCE_S: dict[str, float] = {}
+
+
+async def _reference_s(serve: Serve) -> float:
+    if "base64" in _REFERENCE_S:
+        return _REFERENCE_S["base64"]
+    await _wait_for_free_slots(600, "before the reference run")
+    app = create_app(_live_settings(request_timeout_s=600))
+    async with serve(app) as client:
+        started = time.perf_counter()
+        response = await _classify(client, "reference", _base64_message(10))
+        elapsed = time.perf_counter() - started
+    if response.status_code != 200:
+        pytest.fail(f"reference run answered {response.status_code}: {response.text}")
+    _REFERENCE_S["base64"] = elapsed
+    return elapsed
 
 
 async def _classify(client: httpx.AsyncClient, label: str, message: str) -> httpx.Response:
@@ -97,21 +118,37 @@ async def test_second_request_gets_429(serve: Serve) -> None:
 
 
 async def test_deadline_gives_504_and_frees_the_slot(serve: Serve) -> None:
+    reference = await _reference_s(serve)
+    await _wait_for_free_slots(reference, "after the previous test")
     app = create_app(_live_settings(request_timeout_s=3))
     async with serve(app) as client:
         started = time.perf_counter()
-        response = await _classify(client, "deadline", _base64_message())
+        response = await _classify(client, "deadline", _base64_message(11))
         elapsed = time.perf_counter() - started
         assert response.status_code == 504
         assert response.json()["error"]["code"] == "llm_timeout"
         assert elapsed <= 4.5
-        await _wait_for_free_slots(15)
+        released = await _wait_for_free_slots(reference, "after the 504")
+    assert released <= reference / 2, (
+        f"slot freed {released:.1f} s after the 504, a full run takes {reference:.1f} s: "
+        "llama-server did not cancel the prompt"
+    )
 
 
-async def test_disconnect_frees_the_slot(caplog: pytest.LogCaptureFixture) -> None:
+async def test_disconnect_frees_the_slot(serve: Serve, caplog: pytest.LogCaptureFixture) -> None:
+    reference = await _reference_s(serve)
+    await _wait_for_free_slots(reference, "after the previous test")
     caplog.set_level(logging.INFO, logger="error_classifier")
+
+    def closed() -> bool:
+        return any("outcome=client_closed" in r.getMessage() for r in caplog.records)
+
     app = create_app(_live_settings(request_timeout_s=120))
-    server = uvicorn.Server(uvicorn.Config(app, host="127.0.0.1", port=0, log_level="warning"))
+    # A short graceful shutdown makes a failing run cancel the work instead of waiting for it.
+    config = uvicorn.Config(
+        app, host="127.0.0.1", port=0, log_level="warning", timeout_graceful_shutdown=5
+    )
+    server = uvicorn.Server(config)
     serving = asyncio.create_task(server.serve())
     try:
         with anyio.fail_after(10):
@@ -120,14 +157,24 @@ async def test_disconnect_frees_the_slot(caplog: pytest.LogCaptureFixture) -> No
         port = server.servers[0].sockets[0].getsockname()[1]
         async with httpx.AsyncClient(base_url=f"http://127.0.0.1:{port}", timeout=None) as client:
             request = asyncio.create_task(
-                client.post("/classify", json={"message": _base64_message()})
+                client.post("/classify", json={"message": _base64_message(12)})
             )
             await asyncio.sleep(3)
             request.cancel()
             with pytest.raises(asyncio.CancelledError):
                 await request
-        await _wait_for_free_slots(15)
+        with anyio.move_on_after(10):
+            while not closed():  # noqa: ASYNC110
+                await asyncio.sleep(0.1)
+        if not closed():
+            pytest.fail(
+                "the API did not log outcome=client_closed within 10 s after the client left"
+            )
+        released = await _wait_for_free_slots(reference, "after the client left")
+        assert released <= reference / 2, (
+            f"slot freed {released:.1f} s after the client left, a full run takes "
+            f"{reference:.1f} s: llama-server did not cancel the prompt"
+        )
     finally:
         server.should_exit = True
         await serving
-    assert any("outcome=client_closed" in r.getMessage() for r in caplog.records)
