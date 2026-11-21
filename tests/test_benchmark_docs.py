@@ -6,9 +6,12 @@ from error_classifier.benchmark.report import BenchFile, read_bench, render_benc
 
 ROOT = Path(__file__).resolve().parents[1]
 FILES = sorted((ROOT / "bench" / "results").glob("*.jsonl"))
+M2_FILES = sorted((ROOT / "bench" / "results-m2").glob("*.jsonl"))
 DOC = ROOT / "README.md"
 MARKER_START = "<!-- bench-table:start -->"
 MARKER_END = "<!-- bench-table:end -->"
+M2_START = "<!-- bench-m2-table:start -->"
+M2_END = "<!-- bench-m2-table:end -->"
 # The 50-request series was run once, before the default moved to a model without it.
 SERIES_MODEL = "qwen3.5-2b-q4km"
 EXPECTED_MODELS = {"granite-4.1-3b-q4km", "qwen3-4b-instruct-2507-q4km", "qwen3.5-2b-q4km"}
@@ -16,6 +19,10 @@ EXPECTED_MODELS = {"granite-4.1-3b-q4km", "qwen3-4b-instruct-2507-q4km", "qwen3.
 
 def _benches() -> list[BenchFile]:
     return [read_bench(path) for path in FILES]
+
+
+def _m2_benches() -> list[BenchFile]:
+    return [read_bench(path) for path in M2_FILES]
 
 
 def _default_alias() -> str:
@@ -77,3 +84,25 @@ def test_tables_in_the_doc_match_the_report() -> None:
     block = text[start + len(MARKER_START) : end].strip()
 
     assert block == render_bench_report(_benches()).strip()
+
+
+def test_m2_file_is_one_complete_docker_run() -> None:
+    assert len(M2_FILES) == 1, [path.name for path in M2_FILES]
+    path, bench = M2_FILES[0], _m2_benches()[0]
+    config = bench.summary.config
+
+    assert config.complete, path.name
+    assert config.stop_reason is None, path.name
+    assert config.engine == "docker", path.name
+    assert config.machine == "arm64", path.name
+    assert config.git_dirty is False, path.name
+    assert path.name == f"{config.started_at[:10]}-{config.model}.jsonl"
+    assert aggregate(bench.records, bench.readings) == bench.summary.aggregates, path.name
+
+
+def test_m2_tables_in_the_doc_match_the_report() -> None:
+    text = DOC.read_text(encoding="utf-8")
+    start, end = text.index(M2_START), text.index(M2_END)
+    block = text[start + len(M2_START) : end].strip()
+
+    assert block == render_bench_report(_m2_benches()).strip()

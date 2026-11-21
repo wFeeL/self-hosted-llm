@@ -730,6 +730,32 @@ Engine: podman, podman version 5.7.0; 8 vCPU x86_64; llm threads 6, context 8192
 | qwen3.5-2b-q4km | 2.34 GiB | 0.10 GiB | 2.27 GiB |
 <!-- bench-table:end -->
 
+### MacBook Air M2, Docker Desktop
+
+<!-- bench-m2-table:start -->
+Engine: docker, Docker Compose version v2.31.0-desktop.2; 8 vCPU arm64; llm CPU limit 4; llm threads 4, context 8192, slots 2, batch 512.
+
+| Model | Quant | GGUF | Load at start | Cold start to /health, s | Cold start to /ready, s | p50, s | p95, s | Max, s | n ok | Non-ok | Generation, tok/s | Prompt, tok/s | CPU llm, % |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| qwen3-4b-instruct-2507-q4km | Q4_K_M | 2.33 GiB | 2.73 loaded | 1.5 | 6.7 | 6.5 | 7.0 | 7.2 | 20 | 0 | 13.5 | 36.5 | 383.9 |
+
+| Model | Long input, s | Long input outcome | Two clients p95, s | Two clients non-ok | Queue probe: immediate 429 | Queue probe: 429 after wait | Queue probe: other non-ok |
+|---|---|---|---|---|---|---|---|
+| qwen3-4b-instruct-2507-q4km | 66.2 | ok | 43.1 | 0 | 1 | 2 | 0 |
+
+| Model | p50 first 10, s | p95 first 10, s | p50 last 10, s | p95 last 10, s | Memory before | Memory after | n ok | Non-ok |
+|---|---|---|---|---|---|---|---|---|
+| qwen3-4b-instruct-2507-q4km | 10.3 | 17.0 | 8.6 | 14.2 | 3.61 GiB | 3.61 GiB | 50 | 0 |
+
+| Model | llm peak | llm file | api peak | api file | llm swap peak | llm swap max | llm memory max | api swap peak | api swap max | api memory max | GGUF | RAM floor | RAM, conservative | RAM, worst | llm image | api image |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| qwen3-4b-instruct-2507-q4km | 3.62 GiB | 0.00 GiB | 0.06 GiB | 0.00 GiB | 0.00 GiB | 0 | 6979321856 | 0.00 GiB | 0 | 536870912 | 2.33 GiB | 3.61 GiB | 5.93 GiB | 5.95 GiB | 0.78 GiB | 0.20 GiB |
+
+| Model | llm need | api peak | Disk |
+|---|---|---|---|
+| qwen3-4b-instruct-2507-q4km | 5.93 GiB | 0.06 GiB | 3.30 GiB |
+<!-- bench-m2-table:end -->
+
 ### Как читать таблицы
 
 Задержка это время запроса у клиента с очередью и повтором. `CPU llm, %` считает 100% за одно ядро:
