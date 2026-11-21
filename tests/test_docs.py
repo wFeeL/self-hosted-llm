@@ -97,11 +97,13 @@ def test_compose_variables_match_env_example_and_readme() -> None:
 
 def test_no_internal_network_claim() -> None:
     assert "internal network" not in README
+    assert not re.search(r"(?i)внутренн\w*\s+(\S+-)?сет", README)
 
 
 def test_readme_explains_language_and_runtime_api() -> None:
-    assert "English" in README
-    assert "OpenAI-compatible" in README
+    text = " ".join(README.split())
+    assert "`summary` и `suggested_action` всегда на английском" in text
+    assert "OpenAI-совместим" in text
 
 
 def test_readme_example_response_has_the_documented_fields() -> None:

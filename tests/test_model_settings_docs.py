@@ -23,7 +23,7 @@ REQUIRED = (
     "LLM_DISABLE_THINKING",
 )
 NOT_MEASURED = "# Memory not measured"
-RECOMMENDED = re.compile(r"^Recommended: \x60([^\x60]+)\x60$", re.MULTILINE)
+RECOMMENDED = re.compile(r"^Рекомендуется: \x60([^\x60]+)\x60$", re.MULTILINE)
 LIMIT = re.compile(r"^(\d+)([gm])$")
 LONG_INPUT_MARGIN = 1.3
 # The peak was taken under the limit it is compared with, so it understates the need.

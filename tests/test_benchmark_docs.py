@@ -58,9 +58,9 @@ def test_todo_names_the_missing_series() -> None:
     if not config.skip_sequential:
         return
     readme = DOC.read_text(encoding="utf-8")
-    assert "## About this test task" in readme
-    section = readme.split("## About this test task", 1)[1]
-    assert "50-request series" in section
+    assert "## \u041e тестовом задании" in readme
+    section = " ".join(readme.split("## \u041e тестовом задании", 1)[1].split())
+    assert "серию из 50 запросов" in section
     assert default in section
 
 
