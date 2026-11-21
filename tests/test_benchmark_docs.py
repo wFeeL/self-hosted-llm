@@ -1,6 +1,8 @@
 import re
 from pathlib import Path
 
+from docs_helpers import marked_block, report_cell, report_tables, table_rows
+
 from error_classifier.benchmark.aggregate import aggregate
 from error_classifier.benchmark.report import BenchFile, read_bench, render_bench_report
 
@@ -8,10 +10,6 @@ ROOT = Path(__file__).resolve().parents[1]
 FILES = sorted((ROOT / "bench" / "results").glob("*.jsonl"))
 M2_FILES = sorted((ROOT / "bench" / "results-m2").glob("*.jsonl"))
 DOC = ROOT / "README.md"
-MARKER_START = "<!-- bench-table:start -->"
-MARKER_END = "<!-- bench-table:end -->"
-M2_START = "<!-- bench-m2-table:start -->"
-M2_END = "<!-- bench-m2-table:end -->"
 # The 50-request series was run once, before the default moved to a model without it.
 SERIES_MODEL = "qwen3.5-2b-q4km"
 EXPECTED_MODELS = {"granite-4.1-3b-q4km", "qwen3-4b-instruct-2507-q4km", "qwen3.5-2b-q4km"}
@@ -78,14 +76,6 @@ def test_every_run_probed_the_queue_and_kept_the_series_clean() -> None:
         assert set(aggregates.series.outcomes) == {"ok"}, path.name
 
 
-def test_tables_in_the_doc_match_the_report() -> None:
-    text = DOC.read_text(encoding="utf-8")
-    start, end = text.index(MARKER_START), text.index(MARKER_END)
-    block = text[start + len(MARKER_START) : end].strip()
-
-    assert block == render_bench_report(_benches()).strip()
-
-
 def test_m2_file_is_one_complete_docker_run() -> None:
     assert len(M2_FILES) == 1, [path.name for path in M2_FILES]
     path, bench = M2_FILES[0], _m2_benches()[0]
@@ -100,9 +90,40 @@ def test_m2_file_is_one_complete_docker_run() -> None:
     assert aggregate(bench.records, bench.readings) == bench.summary.aggregates, path.name
 
 
-def test_m2_tables_in_the_doc_match_the_report() -> None:
-    text = DOC.read_text(encoding="utf-8")
-    start, end = text.index(M2_START), text.index(M2_END)
-    block = text[start + len(M2_START) : end].strip()
+COLUMNS = {
+    "20 запросов подряд, p50 и p95": ["p50, s", "p95, s"],
+    "Вход в 3000 символов": ["Long input, s"],
+    "Два клиента сразу, p95": ["Two clients p95, s"],
+    "50 запросов подряд, p50 первых и последних 10": ["p50 first 10, s", "p50 last 10, s", "n ok"],
+    "Старт до `/ready`, модель уже в томе": ["Cold start to /ready, s"],
+    "Генерация": ["Generation, tok/s"],
+    "CPU `llm`, 100% на ядро": ["CPU llm, %"],
+    "Память `llm` на пике": ["llm peak"],
+    "Память `api` на пике": ["api peak"],
+    "Диск: образы и модель": ["Disk"],
+}
+NUMBER = re.compile(r"(?<![\w.])\d+(?:\.\d+)?(?![\w])")
+NOT_RUN = "не запускалась"
 
-    assert block == render_bench_report(_m2_benches()).strip()
+
+def test_bench_summary_matches_the_reports() -> None:
+    model = _default_alias()
+    rows = table_rows(marked_block(DOC.read_text(encoding="utf-8"), "bench-summary"))
+    assert {row[0] for row in rows} == set(COLUMNS)
+    assert len(rows) == len(COLUMNS)
+    server = report_tables(render_bench_report(_benches()), model)
+    m2 = report_tables(render_bench_report(_m2_benches()), model)
+    for row in rows:
+        for cell, tables in ((row[1], server), (row[2], m2)):
+            expected: list[str] = []
+            for column in COLUMNS[row[0]]:
+                anchor = COLUMNS[row[0]][0] if column == "n ok" else None
+                expected.append(report_cell(tables, column, anchor=anchor))
+            if all(value == "-" for value in expected):
+                assert cell == NOT_RUN, row[0]
+            else:
+                numbers = [v for value in expected for v in NUMBER.findall(value)]
+                assert NUMBER.findall(cell) == numbers, row[0]
+    sequential = [r for r in _m2_benches()[0].records if r.phase == "sequential"]
+    assert len(sequential) == 50
+    assert {r.outcome for r in sequential} == {"ok"}

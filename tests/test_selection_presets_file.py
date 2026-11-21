@@ -1,4 +1,6 @@
-from docs_helpers import ROOT
+import re
+
+from docs_helpers import ROOT, marked_block, readme, tier_choice
 
 from error_classifier.benchmark.report import read_bench
 from error_classifier.evaluation.results import read_result
@@ -35,3 +37,18 @@ def test_presets_bench_names_are_known() -> None:
     known = set(_candidates())
     for path in sorted((ROOT / "bench" / "results").glob("*.jsonl")):
         assert read_bench(path).summary.config.model in known, path.name
+
+
+def test_small_model_block_matches_the_preset() -> None:
+    block = marked_block(readme(), "small-model-env")
+    env = dict(re.findall(r"^([A-Z_]+)=(.*)$", block, re.MULTILINE))
+    candidates = _candidates()
+    alias = env["MODEL_ALIAS"]
+    assert alias in candidates
+    preset = candidates[alias]
+    assert preset.hf_repo == env["LLAMA_ARG_HF_REPO"]
+    assert preset.hf_file == env["LLAMA_ARG_HF_FILE"]
+    assert preset.disable_thinking == (env["LLM_DISABLE_THINKING"] == "true")
+    model, doc = tier_choice(4)
+    assert alias == model
+    assert doc.meta.settings.disable_thinking == preset.disable_thinking

@@ -7,6 +7,7 @@ from collections.abc import Callable
 from pathlib import Path
 
 import pytest
+from docs_helpers import env_example, table_rows
 
 from error_classifier.benchmark.cli import build_parser as bench_parser
 from error_classifier.classify.prompt import SYSTEM_PROMPT
@@ -138,7 +139,7 @@ def test_no_docs_directory() -> None:
 
 
 def _sh_commands(script: str) -> list[str]:
-    """Commands `script run` from the sh blocks of the README, joined at a trailing backslash."""
+    """Commands of `script` from the sh blocks of the README, joined at a trailing backslash."""
     found: list[str] = []
     in_block = False
     pending = ""
@@ -155,27 +156,82 @@ def _sh_commands(script: str) -> list[str]:
                 continue
             line = pending + line
             pending = ""
-            if f"scripts/{script}.py run" in line:
+            if f"scripts/{script}.py " in line:
                 found.append(line)
     return found
 
 
 @pytest.mark.parametrize(
-    ("script", "parser", "count"),
-    [("evaluate", eval_parser, 2), ("bench", bench_parser, 1)],
+    ("script", "parser"),
+    [("evaluate", eval_parser), ("bench", bench_parser)],
 )
-def test_readme_commands_parse(
-    script: str, parser: Callable[[], argparse.ArgumentParser], count: int
-) -> None:
+def test_readme_commands_parse(script: str, parser: Callable[[], argparse.ArgumentParser]) -> None:
     lines = _sh_commands(script)
-    assert len(lines) == count
+    assert lines
     for line in lines:
         tokens = shlex.split(line, comments=True)
         start = next(i for i, t in enumerate(tokens) if t.endswith(f"scripts/{script}.py"))
+        args = tokens[start + 1 :]
         try:
-            parser().parse_args(tokens[start + 1 :])
+            parser().parse_args(args)
         except SystemExit as exc:
             pytest.fail(f"README command does not parse ({exc.code}): {line}")
+        for arg in args:
+            if "*" in arg:
+                assert list(ROOT.glob(arg)), f"no file matches {arg}: {line}"
+
+
+def _section(heading: str) -> str:
+    assert README.count(f"{heading}\n") == 1, heading
+    body = README.split(f"{heading}\n")[1]
+    end = re.search(r"^#", body, re.MULTILINE)
+    return body[: end.start()] if end else body
+
+
+def test_readme_settings_table_matches_env_example() -> None:
+    env = env_example()
+    rows = table_rows(_section("### Настройка"))
+    seen = 0
+    for row in rows:
+        names = row[0].split(", ")
+        for name in names:
+            assert name in env, name
+        seen += len(names)
+        defaults = row[1].split(", ")
+        if len(defaults) == len(names):
+            for name, value in zip(names, defaults, strict=True):
+                assert env[name] == ("" if value == "пусто" else value), name
+    assert seen >= 10
+
+
+def test_readme_sizing_first_row_is_env_example() -> None:
+    env = env_example()
+    lines = README.splitlines()
+    start = next(i for i, line in enumerate(lines) if line.startswith("| Сервер | Модель |"))
+    table = [line for line in lines[start:] if line.startswith("|")]
+    header = [cell.strip() for cell in table[0].strip("|").split("|")]
+    first = [cell.strip() for cell in table[2].strip("|").split("|")]
+    checked: list[str] = []
+    for head, cell in zip(header[2:], first[2:], strict=True):
+        names = re.findall(r"[A-Z][A-Z_]+", head)
+        values = cell.split(" / ")
+        assert len(names) == len(values), head
+        for name, value in zip(names, values, strict=True):
+            assert env[name] == value, name
+            checked.append(name)
+    assert checked == [
+        "LLM_CPUS",
+        "LLAMA_ARG_THREADS",
+        "LLAMA_ARG_N_PARALLEL",
+        "LLAMA_ARG_CTX_SIZE",
+        "LLM_MEM_LIMIT",
+        "REQUEST_TIMEOUT_S",
+        "QUEUE_TIMEOUT_S",
+    ]
+
+
+def test_readme_stays_short() -> None:
+    assert len(README) <= 17000
 
 
 def test_readme_selection_command() -> None:

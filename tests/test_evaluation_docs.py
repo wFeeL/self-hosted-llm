@@ -1,7 +1,10 @@
+import json
 import re
 from pathlib import Path
 
-from error_classifier.benchmark.report import read_bench
+from docs_helpers import marked_block, readme, report_cell, report_tables, table_rows, tier_choice
+
+from error_classifier.benchmark.report import read_bench, render_bench_report
 from error_classifier.config import Settings
 from error_classifier.evaluation.dataset import DEFAULT_DATASET, load_dataset
 from error_classifier.evaluation.metrics import DEFAULT_MODEL, summarize
@@ -9,17 +12,13 @@ from error_classifier.evaluation.results import (
     SAME_RUNTIME,
     ResultDoc,
     dataset_sha256,
-    model_run,
     prompt_sha256,
     read_result,
-    render_report,
 )
-from error_classifier.recommend import DEFAULT_TIER_GIB, choose_per_tier
+from error_classifier.recommend import DEFAULT_TIER_GIB
 
 ROOT = Path(__file__).resolve().parents[1]
 RESULTS = sorted((ROOT / "eval" / "results").glob("*.json"))
-MARKER_START = "<!-- eval-table:start -->"
-MARKER_END = "<!-- eval-table:end -->"
 REQUIRED_RUNTIME = (
     "LLAMA_ARG_CTX_SIZE",
     "LLAMA_ARG_N_PARALLEL",
@@ -44,12 +43,7 @@ def _default(field: str) -> object:
 
 
 def _default_tier_doc() -> ResultDoc:
-    docs = _docs()
-    items = load_dataset(ROOT / DEFAULT_DATASET)
-    benches = [read_bench(path) for path in sorted((ROOT / "bench" / "results").glob("*.jsonl"))]
-    choices = choose_per_tier([model_run(doc, items) for doc in docs], benches)
-    model = next(c.model for c in choices if c.tier_gib == DEFAULT_TIER_GIB)
-    return next(doc for doc in docs if doc.meta.model == model)
+    return tier_choice(DEFAULT_TIER_GIB)[1]
 
 
 def _env_example() -> dict[str, str]:
@@ -102,13 +96,55 @@ def test_stored_summary_matches_items() -> None:
         assert summarize(items, doc.items) == doc.summary, doc.meta.model
 
 
-def test_docs_tables_match_report() -> None:
-    text = (ROOT / "README.md").read_text(encoding="utf-8")
-    assert text.count(MARKER_START) == 1
-    assert text.count(MARKER_END) == 1
-    between = text.split(MARKER_START)[1].split(MARKER_END)[0]
+def test_model_table_matches_the_results() -> None:
     items = load_dataset(ROOT / DEFAULT_DATASET)
-    assert between.strip() == render_report(_docs(), items).strip()
+    docs = {doc.meta.model: doc for doc in _docs()}
+    bench_files = [
+        read_bench(path) for path in sorted((ROOT / "bench" / "results").glob("*.jsonl"))
+    ]
+    measured = {b.summary.config.model for b in bench_files}
+    report = render_bench_report(bench_files)
+    rows = table_rows(marked_block(readme(), "model-table"))
+    assert {row[0].strip("`") for row in rows} == set(docs)
+    assert len(rows) == len(docs)
+    for row in rows:
+        alias = row[0].strip("`")
+        summary = summarize(items, docs[alias].items)
+        both = re.fullmatch(r"(\d+)( из (\d+))?", row[2])
+        assert both is not None, (alias, row[2])
+        assert int(both.group(1)) == summary.both_correct, alias
+        if both.group(3) is not None:
+            assert int(both.group(3)) == len(items), alias
+        assert row[3] == str(summary.category_correct), alias
+        assert row[4] == str(summary.severity_correct), alias
+        assert row[5] == f"{summary.leaks} из {summary.secret_ok_items}", alias
+        if alias in measured:
+            tables = report_tables(report, alias)
+            assert row[6] == report_cell(tables, "p50, s"), alias
+            assert row[7] == report_cell(tables, "llm need").replace("GiB", "ГиБ"), alias
+        else:
+            assert row[6:8] == ["-", "-"], alias
+
+
+def test_readme_example_is_the_js_001_answer() -> None:
+    text = readme()
+    model = _env_example()["MODEL_ALIAS"]
+    doc = next(d for d in _docs() if d.meta.model == model)
+    row = next(r for r in doc.items if r.id == "js-001")
+    lines = [line for line in text.splitlines() if line.startswith('{"category"')]
+    assert len(lines) == 1
+    body = json.loads(lines[0])
+    assert body["category"] == str(row.category)
+    assert body["severity"] == str(row.severity)
+    assert body["summary"] == row.summary
+    assert body["suggested_action"] == row.suggested_action
+    assert body["model"] == model
+    assert body["latency_ms"] == row.latency_ms
+    assert body["truncated"] is row.truncated
+    requests = [line for line in text.splitlines() if line.startswith('{"message"')]
+    assert len(requests) == 1
+    item = next(i for i in load_dataset(ROOT / DEFAULT_DATASET) if i.id == "js-001")
+    assert json.loads(requests[0])["message"] == item.text
 
 
 def test_env_example_model_is_the_recommendation_for_the_default_tier() -> None:
