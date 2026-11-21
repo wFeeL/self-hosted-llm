@@ -7,10 +7,12 @@ from collections.abc import Callable
 from pathlib import Path
 
 import pytest
+from docs_helpers import env_example, table_rows
 
 from error_classifier.benchmark.cli import build_parser as bench_parser
 from error_classifier.classify.prompt import SYSTEM_PROMPT
 from error_classifier.classify.schema import Category, Severity
+from error_classifier.config import Settings
 from error_classifier.errors import ServiceError
 from error_classifier.evaluation.cli import build_parser as eval_parser
 from error_classifier.selection.cli import build_parser as selection_parser
@@ -19,17 +21,6 @@ ROOT = Path(__file__).resolve().parents[1]
 README = (ROOT / "README.md").read_text(encoding="utf-8")
 
 ENUM_VALUES = {str(v) for v in [*Category, *Severity]}
-SETTINGS_VARIABLES = (
-    "REQUEST_TIMEOUT_S",
-    "MAX_CONCURRENCY",
-    "MAX_QUEUE",
-    "QUEUE_TIMEOUT_S",
-    "MAX_INPUT_CHARS",
-    "MAX_REQUEST_BYTES",
-    "MAX_OUTPUT_TOKENS",
-    "LLM_TEMPERATURE",
-    "LLM_DISABLE_THINKING",
-)
 
 
 def _definitions() -> dict[str, str]:
@@ -77,12 +68,7 @@ def test_every_error_code_is_documented() -> None:
         assert any(row.startswith(prefix) for row in rows), cls.__name__
 
 
-@pytest.mark.parametrize("name", SETTINGS_VARIABLES)
-def test_setting_is_documented(name: str) -> None:
-    assert f"| {name} |" in README
-
-
-def test_compose_variables_match_env_example_and_readme() -> None:
+def test_compose_variables_match_env_example() -> None:
     compose_text = (ROOT / "compose.yaml").read_text(encoding="utf-8")
     env_text = (ROOT / ".env.example").read_text(encoding="utf-8")
     compose_vars = set(re.findall(r"\$\{([A-Z_][A-Z0-9_]*)", compose_text))
@@ -92,8 +78,22 @@ def test_compose_variables_match_env_example_and_readme() -> None:
         f"compose only: {sorted(compose_vars - env_keys)}, "
         f".env.example only: {sorted(env_keys - compose_vars)}"
     )
-    undocumented = sorted(name for name in compose_vars if f"| {name} |" not in README)
-    assert not undocumented, f"missing from the README table: {undocumented}"
+
+
+def _api_environment() -> set[str]:
+    compose_text = (ROOT / "compose.yaml").read_text(encoding="utf-8")
+    start = re.search(r"^  api:$", compose_text, re.M)
+    assert start is not None
+    rest = compose_text[start.end() :]
+    end = re.search(r"^  \S", rest, re.M)
+    block = rest[: end.start()] if end else rest
+    return set(re.findall(r"^\s{6}([A-Z_][A-Z0-9_]*):", block, re.M))
+
+
+def test_every_setting_reaches_the_api_container() -> None:
+    names = {name.upper() for name in Settings.model_fields}
+    missing = sorted(names - _api_environment())
+    assert not missing, f"not in the api environment of compose.yaml: {missing}"
 
 
 def test_no_internal_network_claim() -> None:
@@ -139,7 +139,7 @@ def test_no_docs_directory() -> None:
 
 
 def _sh_commands(script: str) -> list[str]:
-    """Commands `script run` from the sh blocks of the README, joined at a trailing backslash."""
+    """Commands of `script` from the sh blocks of the README, joined at a trailing backslash."""
     found: list[str] = []
     in_block = False
     pending = ""
@@ -156,27 +156,82 @@ def _sh_commands(script: str) -> list[str]:
                 continue
             line = pending + line
             pending = ""
-            if f"scripts/{script}.py run" in line:
+            if f"scripts/{script}.py " in line:
                 found.append(line)
     return found
 
 
 @pytest.mark.parametrize(
-    ("script", "parser", "count"),
-    [("evaluate", eval_parser, 2), ("bench", bench_parser, 1)],
+    ("script", "parser"),
+    [("evaluate", eval_parser), ("bench", bench_parser)],
 )
-def test_readme_commands_parse(
-    script: str, parser: Callable[[], argparse.ArgumentParser], count: int
-) -> None:
+def test_readme_commands_parse(script: str, parser: Callable[[], argparse.ArgumentParser]) -> None:
     lines = _sh_commands(script)
-    assert len(lines) == count
+    assert lines
     for line in lines:
         tokens = shlex.split(line, comments=True)
         start = next(i for i, t in enumerate(tokens) if t.endswith(f"scripts/{script}.py"))
+        args = tokens[start + 1 :]
         try:
-            parser().parse_args(tokens[start + 1 :])
+            parser().parse_args(args)
         except SystemExit as exc:
             pytest.fail(f"README command does not parse ({exc.code}): {line}")
+        for arg in args:
+            if "*" in arg:
+                assert list(ROOT.glob(arg)), f"no file matches {arg}: {line}"
+
+
+def _section(heading: str) -> str:
+    assert README.count(f"{heading}\n") == 1, heading
+    body = README.split(f"{heading}\n")[1]
+    end = re.search(r"^#", body, re.MULTILINE)
+    return body[: end.start()] if end else body
+
+
+def test_readme_settings_table_matches_env_example() -> None:
+    env = env_example()
+    rows = table_rows(_section("### Настройка"))
+    seen = 0
+    for row in rows:
+        names = row[0].split(", ")
+        for name in names:
+            assert name in env, name
+        seen += len(names)
+        defaults = row[1].split(", ")
+        if len(defaults) == len(names):
+            for name, value in zip(names, defaults, strict=True):
+                assert env[name] == ("" if value == "пусто" else value), name
+    assert seen >= 10
+
+
+def test_readme_sizing_first_row_is_env_example() -> None:
+    env = env_example()
+    lines = README.splitlines()
+    start = next(i for i, line in enumerate(lines) if line.startswith("| Сервер | Модель |"))
+    table = [line for line in lines[start:] if line.startswith("|")]
+    header = [cell.strip() for cell in table[0].strip("|").split("|")]
+    first = [cell.strip() for cell in table[2].strip("|").split("|")]
+    checked: list[str] = []
+    for head, cell in zip(header[2:], first[2:], strict=True):
+        names = re.findall(r"[A-Z][A-Z_]+", head)
+        values = cell.split(" / ")
+        assert len(names) == len(values), head
+        for name, value in zip(names, values, strict=True):
+            assert env[name] == value, name
+            checked.append(name)
+    assert checked == [
+        "LLM_CPUS",
+        "LLAMA_ARG_THREADS",
+        "LLAMA_ARG_N_PARALLEL",
+        "LLAMA_ARG_CTX_SIZE",
+        "LLM_MEM_LIMIT",
+        "REQUEST_TIMEOUT_S",
+        "QUEUE_TIMEOUT_S",
+    ]
+
+
+def test_readme_stays_short() -> None:
+    assert len(README) <= 17000
 
 
 def test_readme_selection_command() -> None:
