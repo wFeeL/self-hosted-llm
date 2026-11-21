@@ -124,6 +124,11 @@ def _row(result: CandidateResult, ref: Reference, status: str) -> str:
     return "| " + " | ".join(_cell(c) for c in cells) + " |"
 
 
+def _unchecked_row(alias: str, ref: Reference, status: str) -> str:
+    cells = [alias, status] + ["-"] * (len(COLUMNS) - 3) + [ref.note or "-"]
+    return "| " + " | ".join(_cell(c) for c in cells) + " |"
+
+
 def _conditions(ctx: RunContext) -> str:
     host, s = ctx.host, ctx.settings
     total = "unknown" if host.mem_total is None else f"{host.mem_total / GIB:.2f} GiB"
@@ -144,6 +149,7 @@ def _conditions(ctx: RunContext) -> str:
         "one request at a time",
         "prompt cache off",
         "p95 is nearest rank over the smoke rows and excludes queueing",
+        "the model name check confirms the router's routing only",
     ]
     return "Conditions: " + "; ".join(parts) + "."
 
@@ -182,10 +188,13 @@ def render_report(
     lines.append("| " + " | ".join(COLUMNS) + " |")
     lines.append("|" + "---|" * len(COLUMNS))
     for candidate in candidates:
-        result = by_alias.get(candidate.alias)
+        alias = candidate.alias
+        status = decision.status.get(alias, "-")
+        result = by_alias.get(alias)
         if result is not None:
-            status = decision.status.get(candidate.alias, "-")
-            lines.append(_row(result, refs[candidate.alias], status))
+            lines.append(_row(result, refs[alias], status))
+        else:
+            lines.append(_unchecked_row(alias, refs[alias], status))
     lines.append("")
     if decision.model is None:
         lines.append(f"No model chosen: {decision.reason}")

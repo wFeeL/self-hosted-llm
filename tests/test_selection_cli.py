@@ -74,10 +74,12 @@ class Server:
     leak: set[str] = field(default_factory=set[str])
     step_s: dict[str, float] = field(default_factory=dict[str, float])
     down: bool = False
+    down_after_posts: int | None = None
 
     def models(self, request: httpx.Request) -> httpx.Response:
         self.requests.append(request.url.path)
-        if self.down:
+        after = self.down_after_posts
+        if self.down or (after is not None and len(self.posts) >= after):
             raise httpx.ConnectError("router is down")
         data = [{"id": a, "source": "preset", "status": s} for a, s in self.status.items()]
         return httpx.Response(200, json={"data": data})
@@ -191,7 +193,12 @@ class World:
                 )
             )
         meta = RunMeta(
-            model=alias, engine="podman", container="c", runtime_env={}, runtime_build=None,
+            model=alias, engine="podman", container="c",
+            runtime_env={
+                "LLAMA_ARG_HF_REPO": f"org/{alias}",
+                "LLAMA_ARG_HF_FILE": f"{alias}.gguf",
+            },
+            runtime_build=None,
             model_path=None, total_slots=None, slot_ctx=None,
             settings=RunSettings(
                 temperature=0.0, max_output_tokens=256, max_input_chars=3000,
@@ -375,7 +382,26 @@ async def test_cli_unload_timeout_exits_4(world: World) -> None:
     assert code == 4
     assert "# Model selection" in out
     assert "alpha" in err
+    assert "Chosen" not in out
+    assert "```" not in out
+    assert "selection interrupted: " in out
+    beta = next(line for line in out.splitlines() if line.startswith("| beta "))
+    assert "not checked" in beta
     assert world.server.posts == [("load", "alpha"), ("unload", "alpha")]
+
+
+async def test_cli_router_error_midway_prints_an_interrupted_report(world: World) -> None:
+    world.server.down_after_posts = 3  # alpha loaded and unloaded, beta load requested
+    code, out, err = await world.run()
+    assert code == 4
+    assert "router error" in err
+    assert "Chosen" not in out
+    assert "MODEL_ALIAS" not in out
+    assert "selection interrupted: router error" in out
+    alpha = next(line for line in out.splitlines() if line.startswith("| alpha "))
+    beta = next(line for line in out.splitlines() if line.startswith("| beta "))
+    assert "passed" in alpha
+    assert "not checked" in beta
 
 
 async def test_cli_stuck_leftover_exits_4_without_a_report(world: World) -> None:
@@ -410,6 +436,16 @@ async def test_cli_unknown_preset_exits_2(world: World) -> None:
     assert world.server.posts == []
 
 
+async def test_cli_extra_router_preset_exits_2(world: World) -> None:
+    world.server.status["gamma"] = {"value": "unloaded"}
+    code, out, err = await world.run()
+    assert code == 2
+    assert "gamma" in err
+    assert "selector" in err
+    assert out == ""
+    assert world.server.posts == []
+
+
 async def test_cli_json(world: World) -> None:
     code, out, _ = await world.run("--json")
     assert code == 0
@@ -417,7 +453,8 @@ async def test_cli_json(world: World) -> None:
 
 
 async def test_cli_prefilter_skips_and_all_checks(world: World) -> None:
-    big = bench_file("beta", conf={"model_file_size": 5 * GIB})
+    runtime = {"LLAMA_ARG_HF_REPO": "org/beta", "LLAMA_ARG_HF_FILE": "beta.gguf"}
+    big = bench_file("beta", conf={"model_file_size": 5 * GIB, "runtime_env": runtime})
     write_bench(
         world.root / "bench" / "results" / "2026-11-15-beta.jsonl",
         big.records, big.readings, big.summary,
